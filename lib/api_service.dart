@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -29,7 +30,10 @@ class ApiService {
     if (language != null) request.fields['language'] = language;
     if (model != null) request.fields['model'] = model;
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(
+      const Duration(seconds: 120),
+      onTimeout: () => throw TimeoutException('Het thoi gian cho backend'),
+    );
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode != 200) {
       throw Exception('Loi ${resp.statusCode}: ${resp.body}');

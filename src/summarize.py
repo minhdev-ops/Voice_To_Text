@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 
 import requests
 
@@ -95,6 +96,15 @@ _QUESTION_RE = re.compile(r"\?|khong ro|chua ro|bo ngo|de ngo|chua quyet dinh", 
 _SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
+
+
+def _remove_diacritics(text: str) -> str:
+    text = text.replace("đ", "d").replace("Đ", "D")
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text)
+        if unicodedata.category(c) != "Mn"
+    )
+
 def _split_sentences(text: str) -> list:
     parts = [s.strip(" \t\n-*\u2022") for s in _SPLIT_RE.split(text) if s.strip(" \t\n-*\u2022")]
     return [p for p in parts if len(p) >= 4]
@@ -113,18 +123,19 @@ def _empty_summary() -> dict:
 
 def summarize_with_rules(transcript: str) -> dict:
     sentences = _split_sentences(transcript)
+    norm_sentences = _split_sentences(_remove_diacritics(transcript))
     if not sentences:
         return _empty_summary()
     action_items = []
     decisions = []
     open_questions = []
-    for s in sentences:
-        if _QUESTION_RE.search(s):
-            open_questions.append(s)
-        if _DECISION_RE.search(s):
-            decisions.append(s)
-        if _ACTION_RE.search(s):
-            action_items.append({"task": s, "owner": None, "due": None})
+    for raw, norm in zip(sentences, norm_sentences):
+        if _QUESTION_RE.search(norm):
+            open_questions.append(raw)
+        if _DECISION_RE.search(norm):
+            decisions.append(raw)
+        if _ACTION_RE.search(norm):
+            action_items.append({"task": raw, "owner": None, "due": None})
     summary = " ".join(sentences[:3])
     if len(sentences) > 3:
         summary += " ..."

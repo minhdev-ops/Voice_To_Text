@@ -26,6 +26,8 @@ def _pick_device(device: str | None) -> str:
     if device and device != "auto":
         return device
     try:
+        import ctypes
+        ctypes.CDLL("libcublas.so.12")
         import torch
         return "cuda" if torch.cuda.is_available() else "cpu"
     except Exception:
