@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# graphify outputs (knowledge-graph artifacts)
+graphify-out/
+
+# app outputs
+output/
+
+# local env / model cache
+.env
+*.wav
+*.mp3
+*.m4a
