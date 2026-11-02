@@ -1,122 +1,214 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'api_service.dart';
+import 'result_view.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'Auvira - Voice To Text',
+        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
+        home: const HomePage(),
+      );
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final _baseUrl = TextEditingController(text: 'http://10.0.2.2:8000');
+  final _language = TextEditingController(text: 'vi');
+  final _audioRecorder = AudioRecorder();
+
+  List<String> _models = const ['tiny', 'base', 'small', 'medium', 'large-v3'];
+  String _model = 'base';
+  bool _loading = false;
+  bool _recording = false;
+  String? _error;
+  Map<String, dynamic>? _transcript;
+  Map<String, dynamic>? _summary;
+
+  ApiService get api => ApiService(_baseUrl.text.trim());
+
+  @override
+  void initState() {
+    super.initState();
+    _loadModels();
   }
-}
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  Future<void> _loadModels() async {
+    try {
+      final m = await api.listModels();
+      if (m.isNotEmpty) setState(() => _models = m);
+    } catch (_) {}
+  }
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
+  Future<void> _process(List<int> bytes, String filename) async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _loading = true;
+      _error = null;
+      _transcript = null;
+      _summary = null;
     });
+    try {
+      final lang = _language.text.trim().isEmpty ? null : _language.text.trim();
+      final res = await api.transcribeAudio(bytes, filename,
+          language: lang, model: _model);
+      setState(() {
+        _transcript = res['transcript'] as Map<String, dynamic>;
+        _summary = res['summary'] as Map<String, dynamic>;
+      });
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickFile() async {
+    final res = await FilePicker.platform.pickFiles(type: FileType.audio);
+    if (res != null && res.files.single.bytes != null) {
+      await _process(res.files.single.bytes!, res.files.single.name);
+    }
+  }
+
+  Future<void> _toggleRecord() async {
+    if (_recording) {
+      final path = await _audioRecorder.stop();
+      setState(() => _recording = false);
+      if (path != null) {
+        final bytes = await File(path).readAsBytes();
+        await _process(bytes.toList(), 'recording.m4a');
+      }
+    } else {
+      if (await _audioRecorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        final path =
+            '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        await _audioRecorder.start(const RecordConfig(), path: path);
+        setState(() => _recording = true);
+      } else {
+        setState(() => _error = 'Chưa được cấp quyền ghi âm (microphone).');
+      }
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
-    );
+  void dispose() {
+    _audioRecorder.dispose();
+    _baseUrl.dispose();
+    _language.dispose();
+    super.dispose();
   }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Auvira — Voice To Text')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _settingsCard(),
+                    const SizedBox(height: 16),
+                    if (_error != null) _errorCard(),
+                    if (_transcript != null && _summary != null)
+                      ResultView(transcript: _transcript!, summary: _summary!)
+                    else
+                      _actionCard(),
+                  ],
+                ),
+              ),
+      );
+
+  Widget _settingsCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              TextField(
+                controller: _baseUrl,
+                decoration: const InputDecoration(
+                  labelText: 'Backend URL',
+                  hintText: 'http://10.0.2.2:8000',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _language,
+                decoration: const InputDecoration(
+                  labelText: 'Ngôn ngữ (vi/en, để trống = tự nhận)',
+                  hintText: 'vi',
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _model,
+                items: _models
+                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                    .toList(),
+                onChanged: (v) => setState(() => _model = v!),
+                decoration:
+                    const InputDecoration(labelText: 'Mô hình Whisper'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _errorCard() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+      );
+
+  Widget _actionCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              const Text(
+                  'Ghi âm cuộc họp hoặc tải lên file âm thanh để chép lời & tóm tắt.'),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _toggleRecord,
+                      icon: Icon(_recording ? Icons.stop : Icons.mic),
+                      label: Text(_recording ? 'Dừng ghi âm' : 'Ghi âm'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _pickFile,
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('Tải file'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
 }

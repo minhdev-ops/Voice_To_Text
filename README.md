@@ -73,3 +73,25 @@ src/
 app.py           # giao dien Streamlit
 cli.py           # giao dien dong lenh
 ```
+
+## Chay Flutter (app auvira) + Backend Python
+
+Tinh nang Voice_To_Text duoc chia: giao dien Flutter (auvira) goi backend Python (FastAPI) xu ly giong noi.
+
+1. Khoi dong backend tren may tinh (cai may chay model Whisper):
+   pip install -r requirements.txt
+   python api_server.py            # mo cong 0.0.0.0:8000
+   # hoac: uvicorn api_server:app --host 0.0.0.0 --port 8000
+
+2. Mo app Flutter va chay:
+   flutter pub get
+   flutter run
+   - "Ghi am": cap quyen microphone, bam de ghi am cuoc hop.
+   - "Tai file": chon file am thanh (mp3/wav/m4a...).
+   - Nhap Backend URL:
+       * Android emulator: http://10.0.2.2:8000
+       * iOS simulator:    http://127.0.0.1:8000
+       * May that cung Wi-Fi: http://<IP-may-tinh>:8000
+   - Chon nguon ngu (vi/en) va mo hinh Whisper, bam xu ly.
+
+Backend chep loi (Whisper local) roi tom tat (LLM neu co SUMMARY_API_KEY, nguoc lai theo quy tac) va tra JSON cho app hien thi transcript + chu de/quyet dinh/viec can lam.
