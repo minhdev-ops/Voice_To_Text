@@ -156,6 +156,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
                 value: _model,
                 items: _models
                     .map((m) => DropdownMenuItem(value: m, child: Text(m)))
