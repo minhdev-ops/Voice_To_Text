@@ -29,6 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<String> _models = const ['tiny', 'base', 'small', 'medium', 'large-v3'];
   Map<String, dynamic>? _health;
   bool _healthLoading = true;
+  Map<String, dynamic>? _llm;
+  bool _savingLlm = false;
 
   @override
   void initState() {
@@ -40,16 +42,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final models = await widget.api.listModels();
       final health = await widget.api.checkHealth();
+      final llm = await widget.api.getSummarySettings();
       if (mounted) {
         setState(() {
           if (models.isNotEmpty) _models = models;
           _health = health;
+          _llm = llm;
           _healthLoading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _healthLoading = false);
     }
+  }
+
+  Future<void> _editLlm() async {
+    final keyCtrl = TextEditingController();
+    final urlCtrl = TextEditingController(
+        text: (_llm?['base_url'] ?? 'https://api.openai.com/v1').toString());
+    final modelCtrl = TextEditingController(
+        text: (_llm?['model'] ?? 'gpt-4o-mini').toString());
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cấu hình AI tóm tắt'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: keyCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'API key',
+                  hintText: 'sk-...',
+                  helperText: 'Lưu trên máy chủ backend, không gửi lên đâu khác',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: urlCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Base URL',
+                  hintText: 'https://api.openai.com/v1',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: modelCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Model',
+                  hintText: 'gpt-4o-mini',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _savingLlm = true);
+    final res = await widget.api.setSummarySettings(
+      apiKey: keyCtrl.text.trim().isEmpty ? null : keyCtrl.text.trim(),
+      baseUrl: urlCtrl.text.trim(),
+      model: modelCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _savingLlm = false;
+      if (res != null) _llm = res;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res?['configured'] == true
+            ? 'Đã bật tóm tắt bằng AI'
+            : 'Chưa cấu hình được AI, kiểm tra lại key/URL'),
+      ),
+    );
   }
 
   @override
@@ -61,6 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           _serverSection(theme),
           _asrSection(theme),
+          _aiSection(theme),
           _aboutSection(theme),
         ],
       ),
@@ -148,6 +233,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       );
+
+  Widget _aiSection(ThemeData theme) {
+    final configured = _llm?['configured'] == true;
+    return _section(
+      theme,
+      'Tóm tắt bằng AI',
+      Icons.auto_awesome,
+      [
+        ListTile(
+          leading: Icon(
+            configured ? Icons.check_circle : Icons.info_outline,
+            color: configured ? Colors.green : Colors.orange,
+          ),
+          title: Text(configured ? 'Đang bật' : 'Đang tắt (dùng quy tắc)'),
+          subtitle: Text(
+            configured
+                ? '${_llm?['model']} · key ${_llm?['key_hint']}'
+                : 'Nhập API key để tóm tắt/biên bản chất lượng cao',
+          ),
+          trailing: _savingLlm
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.edit, size: 18),
+          onTap: _savingLlm ? null : _editLlm,
+        ),
+        const ListTile(
+          leading: Icon(Icons.info_outline, size: 20),
+          title: Text(
+            'Hỗ trợ mọi API tương thích OpenAI (OpenAI, Groq, Together, Ollama...)',
+            style: TextStyle(fontSize: 13),
+          ),
+          dense: true,
+        ),
+      ],
+    );
+  }
 
   Widget _aboutSection(ThemeData theme) => _section(
         theme,

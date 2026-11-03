@@ -64,6 +64,91 @@ class ApiService {
     return null;
   }
 
+  /// Nhan dang nhanh mot doan ngan (chep loi truc tiep). Tra ve text hoac null.
+  Future<String?> transcribeChunk(
+    List<int> wavBytes, {
+    String? language,
+    String model = 'small',
+  }) async {
+    try {
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/transcribe-chunk'),
+      );
+      req.files.add(http.MultipartFile.fromBytes(
+        'file',
+        wavBytes,
+        filename: 'chunk.wav',
+        contentType: MediaType('audio', 'wav'),
+      ));
+      if (language != null) req.fields['language'] = language;
+      req.fields['model'] = model;
+      final streamed = await req.send().timeout(const Duration(seconds: 30));
+      final resp = await http.Response.fromStream(streamed);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return (data['text'] ?? '').toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Tao lai tom tat cho transcript da co (dung LLM neu backend da cau hinh).
+  Future<Map<String, dynamic>?> resummarize(
+    String text, {
+    String? language,
+  }) async {
+    try {
+      final resp = await http
+          .post(
+            Uri.parse('$baseUrl/api/resummarize'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'text': text, 'language': language}),
+          )
+          .timeout(const Duration(seconds: 120));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getSummarySettings() async {
+    try {
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/settings/summary'))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> setSummarySettings({
+    String? apiKey,
+    String? baseUrl,
+    String? model,
+  }) async {
+    try {
+      final resp = await http
+          .post(
+            Uri.parse('$baseUrl/api/settings/summary'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'api_key': ?apiKey,
+              'base_url': ?baseUrl,
+              'model': ?model,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static (String, String) _mimeFor(String ext) {
     switch (ext) {
       case 'wav':

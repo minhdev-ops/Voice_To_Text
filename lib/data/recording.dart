@@ -71,7 +71,12 @@ class Recording {
         'summary_json': jsonEncode(summary),
       };
 
-  Recording copyWith({int? id, String? title, String? audioPath}) => Recording(
+  Recording copyWith({
+    int? id,
+    String? title,
+    String? audioPath,
+    Map<String, dynamic>? summary,
+  }) => Recording(
         id: id ?? this.id,
         title: title ?? this.title,
         createdAt: createdAt,
@@ -81,7 +86,7 @@ class Recording {
         audioPath: audioPath ?? this.audioPath,
         transcript: transcript,
         segments: segments,
-        summary: summary,
+        summary: summary ?? this.summary,
       );
 
   /// Tieu de goi y tu noi dung transcript (giong cach app ghi chu dat ten).

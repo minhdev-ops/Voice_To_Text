@@ -91,7 +91,16 @@ class _MainShellState extends State<MainShell> {
   Future<void> _openResult(Recording rec) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ResultScreen(recording: rec)),
+      MaterialPageRoute(
+        builder: (_) => ResultScreen(
+          recording: rec,
+          api: _api,
+          onSummaryUpdated: (r, s) async {
+            if (r.id != null) await _repo.updateSummary(r.id!, s);
+            await _loadRecordings();
+          },
+        ),
+      ),
     );
     await _loadRecordings();
   }

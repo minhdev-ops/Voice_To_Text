@@ -12,7 +12,47 @@ import unicodedata
 
 import requests
 
-from .config import SUMMARY_API_KEY, SUMMARY_BASE_URL, SUMMARY_MODEL, llm_configured
+from . import config as _cfg
+
+# Cau hinh LLM co the doi luc chay (tu ung dung), khong can khoi dong lai server.
+_RUNTIME: dict = {}
+
+
+def configure_llm(api_key: str | None = None, base_url: str | None = None,
+                  model: str | None = None) -> None:
+    if api_key is not None:
+        _RUNTIME["api_key"] = api_key.strip()
+    if base_url is not None:
+        _RUNTIME["base_url"] = base_url.strip()
+    if model is not None:
+        _RUNTIME["model"] = model.strip()
+
+
+def _api_key() -> str:
+    return _RUNTIME.get("api_key", _cfg.SUMMARY_API_KEY) or ""
+
+
+def _base_url() -> str:
+    return _RUNTIME.get("base_url", _cfg.SUMMARY_BASE_URL) or ""
+
+
+def _model() -> str:
+    return _RUNTIME.get("model", _cfg.SUMMARY_MODEL) or ""
+
+
+def llm_configured() -> bool:
+    return bool(_api_key() and _base_url() and _model())
+
+
+def llm_status() -> dict:
+    key = _api_key()
+    return {
+        "configured": bool(key and _base_url() and _model()),
+        "base_url": _base_url(),
+        "model": _model(),
+        "key_hint": (key[:4] + "..." + key[-4:]) if len(key) > 12 else ("" if not key else "***"),
+        "source": "runtime" if _RUNTIME.get("api_key") else "env",
+    }
 
 SYSTEM_PROMPT = (
     "Ban la tro ly ghi chep cuoc hop chuyen nghiep. "
@@ -56,9 +96,9 @@ def summarize_transcript(transcript: str, language: str | None = None) -> dict:
         return _empty_summary()
     if not llm_configured():
         return summarize_with_rules(transcript)
-    url = SUMMARY_BASE_URL.rstrip("/") + "/chat/completions"
+    url = _base_url().rstrip("/") + "/chat/completions"
     payload = {
-        "model": SUMMARY_MODEL,
+        "model": _model(),
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.replace("{transcript}", transcript)},
@@ -67,7 +107,7 @@ def summarize_transcript(transcript: str, language: str | None = None) -> dict:
         "response_format": {"type": "json_object"},
     }
     headers = {
-        "Authorization": f"Bearer {SUMMARY_API_KEY}",
+        "Authorization": f"Bearer {_api_key()}",
         "Content-Type": "application/json",
     }
     try:

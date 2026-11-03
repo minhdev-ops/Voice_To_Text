@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -77,6 +79,16 @@ class RecordingRepository {
     await db.update(
       'recordings',
       {'audio_path': path},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> updateSummary(int id, Map<String, dynamic> summary) async {
+    final db = await _database();
+    await db.update(
+      'recordings',
+      {'summary_json': jsonEncode(summary)},
       where: 'id = ?',
       whereArgs: [id],
     );

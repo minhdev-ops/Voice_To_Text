@@ -7,22 +7,29 @@ import 'package:just_audio/just_audio.dart';
 
 import '../api_service.dart';
 import '../data/recording.dart';
+import '../export/exporter.dart';
 
 class ResultScreen extends StatefulWidget {
   /// Xem lai mot ban ghi da luu.
   final Recording? recording;
 
-  /// Hoac nhan dang mot tep moi.
+  /// Backend (de tao lai tom tat bang AI).
   final ApiService? api;
+
+  /// Goi khi tom tat duoc cap nhat (de luu xuong SQLite).
+  final Future<void> Function(Recording, Map<String, dynamic>)? onSummaryUpdated;
   final List<int>? bytes;
   final String? filename;
   final String? language;
   final String? model;
   final Future<Recording?> Function(Map<String, dynamic>)? onCompleted;
 
-  const ResultScreen({super.key, required this.recording})
-      : api = null,
-        bytes = null,
+  const ResultScreen({
+    super.key,
+    required this.recording,
+    this.api,
+    this.onSummaryUpdated,
+  })  : bytes = null,
         filename = null,
         language = null,
         model = null,
@@ -36,7 +43,8 @@ class ResultScreen extends StatefulWidget {
     required this.language,
     required this.model,
     required this.onCompleted,
-  }) : recording = null;
+  })  : recording = null,
+        onSummaryUpdated = null;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -154,7 +162,7 @@ class _ResultScreenState extends State<ResultScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          if (rec != null)
+          if (rec != null) ...[
             IconButton(
               icon: const Icon(Icons.copy_all),
               tooltip: 'Sao chép bản chép lời',
@@ -165,6 +173,38 @@ class _ResultScreenState extends State<ResultScreen>
                 );
               },
             ),
+            PopupMenuButton<ExportFormat>(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Xuất và chia sẻ',
+              onSelected: (fmt) => _export(rec, fmt),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: ExportFormat.pdf,
+                  child: ListTile(
+                    leading: Icon(Icons.picture_as_pdf),
+                    title: Text('Xuất PDF'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: ExportFormat.docx,
+                  child: ListTile(
+                    leading: Icon(Icons.description),
+                    title: Text('Xuất Word (.docx)'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem(
+                  value: ExportFormat.txt,
+                  child: ListTile(
+                    leading: Icon(Icons.notes),
+                    title: Text('Xuất văn bản (.txt)'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
         bottom: rec != null
             ? TabBar(
@@ -196,6 +236,49 @@ class _ResultScreenState extends State<ResultScreen>
                         ),
                       ],
                     ),
+    );
+  }
+
+  Future<void> _export(Recording rec, ExportFormat fmt) async {
+    try {
+      await Exporter.share(rec, fmt);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Xuất thất bại: $e')),
+      );
+    }
+  }
+
+  bool _resummarizing = false;
+
+  Future<void> _resummarize() async {
+    final rec = _rec;
+    if (rec == null || widget.api == null) return;
+    setState(() => _resummarizing = true);
+    final s = await widget.api!.resummarize(
+      rec.transcript,
+      language: rec.language,
+    );
+    if (!mounted) return;
+    setState(() => _resummarizing = false);
+    if (s == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không tạo được tóm tắt. Kiểm tra kết nối backend.')),
+      );
+      return;
+    }
+    final updated = rec.copyWith(summary: s);
+    setState(() => _rec = updated);
+    await widget.onSummaryUpdated?.call(updated, s);
+    if (!mounted) return;
+    final isLlm = (s['method'] ?? '') == 'llm';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isLlm
+            ? 'Đã tóm tắt bằng AI'
+            : 'Đã tóm tắt bằng quy tắc (chưa cấu hình AI trong Cài đặt)'),
+      ),
     );
   }
 
@@ -379,20 +462,35 @@ class _ResultScreenState extends State<ResultScreen>
     final actions = (s['action_items'] as List?) ?? [];
     final questions = (s['open_questions'] as List?) ?? [];
 
-    if (summaryText.isEmpty &&
+    final isEmpty = summaryText.isEmpty &&
         topics.isEmpty &&
         decisions.isEmpty &&
         actions.isEmpty &&
-        questions.isEmpty) {
-      return Center(
-        child: Text('Chưa có tóm tắt cho bản ghi này',
-            style: TextStyle(color: theme.colorScheme.outline)),
+        questions.isEmpty;
+
+    if (isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (widget.api != null) _aiButton(),
+          const SizedBox(height: 32),
+          Icon(Icons.auto_awesome_outlined,
+              size: 56, color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 12),
+          Text(
+            'Chưa có tóm tắt cho bản ghi này',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.outline),
+          ),
+        ],
       );
     }
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (widget.api != null) _aiButton(),
         if (summaryText.isNotEmpty)
           _section(theme, 'Tóm tắt chung', Icons.description,
               [Text(summaryText)]),
@@ -451,6 +549,23 @@ class _ResultScreenState extends State<ResultScreen>
       ],
     );
   }
+
+  Widget _aiButton() => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: FilledButton.tonalIcon(
+          onPressed: _resummarizing ? null : _resummarize,
+          icon: _resummarizing
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.auto_awesome),
+          label: Text(_resummarizing
+              ? 'Đang tóm tắt bằng AI...'
+              : 'Tạo lại tóm tắt bằng AI'),
+        ),
+      );
 
   Widget _section(
     ThemeData theme,
