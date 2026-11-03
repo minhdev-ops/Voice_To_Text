@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../api_service.dart';
+import '../audio/wav.dart';
 import '../data/recording.dart';
 
 /// Ghi am ra file WAV 16 kHz mono do he dieu hanh tao header (chuan cho Whisper).
@@ -41,12 +42,68 @@ class _RecordingScreenState extends State<RecordingScreen> {
   String? _error;
   StreamSubscription<Amplitude>? _ampSub;
   double _amp = -60;
+  String? _currentPath;
+
+  // Chep loi truc tiep: doc phan file moi ghi (file do he dieu hanh tao, dung
+  // 16 kHz) roi gui tung doan -> khong bi meo tieng nhu stream PCM.
+  bool _live = true;
+  Timer? _liveTimer;
+  int _readOffset = 44;
+  bool _sending = false;
+  String _confirmed = '';
+  String _pending = '';
 
   @override
   void dispose() {
     _timer?.cancel();
+    _liveTimer?.cancel();
     _ampSub?.cancel();
     super.dispose();
+  }
+
+  void _startLivePolling() {
+    _liveTimer?.cancel();
+    if (!_live) return;
+    _liveTimer = Timer.periodic(
+      const Duration(milliseconds: 2500),
+      (_) => _pollChunk(),
+    );
+  }
+
+  Future<void> _pollChunk() async {
+    if (_sending || !_recording || _paused || _currentPath == null) return;
+    final file = File(_currentPath!);
+    if (!file.existsSync()) return;
+    final size = await file.length();
+    if (size - _readOffset < 9600) return; // can it nhat 0.3 giay
+    _sending = true;
+    try {
+      final raf = await file.open(mode: FileMode.read);
+      await raf.setPosition(_readOffset);
+      final data = await raf.read(size - _readOffset);
+      await raf.close();
+      _readOffset = size;
+      if (data.isEmpty) return;
+      if (mounted) setState(() => _pending = '…');
+      final text = await widget.api.transcribeChunk(
+        pcmToWav(data),
+        language: widget.language,
+        model: 'small',
+      );
+      if (!mounted) return;
+      setState(() {
+        if (text != null && text.trim().isNotEmpty) {
+          _confirmed = _confirmed.isEmpty
+              ? text.trim()
+              : '$_confirmed ${text.trim()}';
+        }
+        _pending = '';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _pending = '');
+    } finally {
+      _sending = false;
+    }
   }
 
   Future<void> _toggleRecord() async {
@@ -71,6 +128,9 @@ class _RecordingScreenState extends State<RecordingScreen> {
       return;
     }
     final dir = await getTemporaryDirectory();
+    _currentPath =
+        '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+    debugPrint('[REC] start -> $_currentPath');
     try {
       await widget.audioRecorder.start(
         const RecordConfig(
@@ -78,9 +138,11 @@ class _RecordingScreenState extends State<RecordingScreen> {
           sampleRate: _kSampleRate,
           numChannels: 1,
         ),
-        path: '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav',
+        path: _currentPath!,
       );
+      debugPrint('[REC] recorder started OK');
     } catch (e) {
+      debugPrint('[REC] start FAILED: $e');
       setState(() => _error = 'Không bật được micro: $e');
       return;
     }
@@ -90,8 +152,12 @@ class _RecordingScreenState extends State<RecordingScreen> {
       _paused = false;
       _error = null;
       _elapsed = Duration.zero;
+      _confirmed = '';
+      _pending = '';
     });
+    _readOffset = 44;
     _startTimer();
+    _startLivePolling();
   }
 
   void _startTimer() {
@@ -112,6 +178,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
 
   Future<void> _stopAndProcess() async {
     _timer?.cancel();
+    _liveTimer?.cancel();
     _ampSub?.cancel();
     setState(() {
       _recording = false;
@@ -120,13 +187,18 @@ class _RecordingScreenState extends State<RecordingScreen> {
     });
 
     try {
-      final tempPath = await widget.audioRecorder.stop();
+      final stopped = await widget.audioRecorder.stop();
+      final tempPath = stopped ?? _currentPath;
+      debugPrint('[REC] stop -> $stopped (fallback $_currentPath)');
       if (tempPath == null) {
         throw Exception('Không lưu được file ghi âm');
       }
       final file = File(tempPath);
-      if (!file.existsSync() || await file.length() < 2048) {
-        throw Exception('Bản ghi quá ngắn hoặc không có âm thanh');
+      final size = file.existsSync() ? await file.length() : 0;
+      debugPrint('[REC] file=$tempPath size=$size bytes');
+      if (size < 2048) {
+        throw Exception(
+            'Bản ghi quá ngắn ($size bytes). Hãy ghi ít nhất 2 giây.');
       }
       final audioPath = await _persist(tempPath);
       final bytes = await File(audioPath).readAsBytes();
@@ -139,6 +211,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
       final text = ((result['transcript'] as Map?)?['text'] ?? '')
           .toString()
           .trim();
+      debugPrint('[REC] transcript length=${text.length}: "$text"');
       if (text.isEmpty) {
         if (mounted) {
           setState(() {
@@ -197,6 +270,28 @@ class _RecordingScreenState extends State<RecordingScreen> {
             Navigator.pop(context);
           },
         ),
+        actions: [
+          if (_recording)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Row(
+                children: [
+                  const Text('Hiện chữ', style: TextStyle(fontSize: 13)),
+                  Switch(
+                    value: _live,
+                    onChanged: (v) {
+                      setState(() => _live = v);
+                      if (v) {
+                        _startLivePolling();
+                      } else {
+                        _liveTimer?.cancel();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
       body: _processing ? _processingView(theme) : _recordView(theme),
     );
@@ -246,7 +341,10 @@ class _RecordingScreenState extends State<RecordingScreen> {
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             ),
-          const Spacer(),
+          if (_live && _recording)
+            Expanded(child: _livePanel(theme))
+          else
+            const Spacer(),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -291,6 +389,46 @@ class _RecordingScreenState extends State<RecordingScreen> {
           const SizedBox(height: 28),
         ],
       ),
+    );
+  }
+
+  Widget _livePanel(ThemeData theme) {
+    final hasText = _confirmed.isNotEmpty || _pending.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: hasText
+          ? SingleChildScrollView(
+              reverse: true,
+              child: RichText(
+                text: TextSpan(
+                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+                  children: [
+                    TextSpan(text: _confirmed),
+                    if (_pending.isNotEmpty)
+                      TextSpan(
+                        text: ' $_pending',
+                        style: TextStyle(
+                          color: theme.colorScheme.outline,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            )
+          : Center(
+              child: Text(
+                'Đang nghe... chữ sẽ hiện ở đây',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ),
     );
   }
 

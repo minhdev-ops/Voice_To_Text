@@ -73,46 +73,58 @@ def transcribe_file(
     model = _load_model(size, device)
     dev = _pick_device(device)
 
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        language=language,
-        beam_size=10,
-        best_of=5,
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-        initial_prompt="Đây là bản ghi âm cuộc họp bằng tiếng Việt.",
-    )
+    prompt = "Đây là bản ghi âm cuộc họp bằng tiếng Việt."
 
-    segments: list = []
-    full_parts: list = []
-    total = getattr(info, "duration", None) or 0.0
-
-    pbar = tqdm.tqdm(total=total, unit="s", desc="Dang chep loi", disable=progress is not None)
-    last_t = 0.0
-    for seg in segments_iter:
-        seg_dict = {
-            "start": round(float(seg.start), 2),
-            "end": round(float(seg.end), 2),
-            "text": seg.text.strip(),
-            "speaker": None,
+    def _run(vad: bool):
+        it, inf = model.transcribe(
+            str(audio_path),
+            language=language,
+            beam_size=10,
+            best_of=5,
+            vad_filter=vad,
+            vad_parameters=dict(min_silence_duration_ms=500) if vad else None,
+            condition_on_previous_text=False,
+            initial_prompt=prompt,
+        )
+        segs: list = []
+        parts: list = []
+        total = getattr(inf, "duration", None) or 0.0
+        bar = tqdm.tqdm(total=total, unit="s", desc="Dang chep loi",
+                        disable=progress is not None or total <= 0)
+        last = 0.0
+        for seg in it:
+            segs.append({
+                "start": round(float(seg.start), 2),
+                "end": round(float(seg.end), 2),
+                "text": seg.text.strip(),
+                "speaker": None,
+            })
+            parts.append(seg.text.strip())
+            if progress is not None:
+                progress(float(seg.end), "Dang chep loi...")
+            else:
+                bar.update(float(seg.end) - last)
+                last = float(seg.end)
+        bar.close()
+        return {
+            "text": " ".join(parts).strip(),
+            "segments": segs,
+            "language": getattr(inf, "language", language or "unknown"),
+            "duration": round(total, 2),
+            "model": size,
+            "device": dev,
+            "vad": vad,
         }
-        segments.append(seg_dict)
-        full_parts.append(seg.text.strip())
-        if progress is not None:
-            progress(float(seg.end), "Dang chep loi...")
-        else:
-            pbar.update(float(seg.end) - last_t)
-            last_t = float(seg.end)
-    pbar.close()
 
-    return {
-        "text": " ".join(full_parts).strip(),
-        "segments": segments,
-        "language": getattr(info, "language", language or "unknown"),
-        "duration": round(total, 2),
-        "model": size,
-        "device": dev,
-    }
+    result = _run(True)
+    # VAD co the xoa sach am thanh nho -> thu lai khong loc truoc khi ket luan rong.
+    if not result["text"]:
+        retry = _run(False)
+        if retry["text"]:
+            retry["vad_fallback"] = True
+            return retry
+        result["vad_fallback"] = True
+    return result
 
 
 def stream_transcribe(
