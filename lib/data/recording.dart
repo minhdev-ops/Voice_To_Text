@@ -1,0 +1,118 @@
+import 'dart:convert';
+
+/// Mot ban ghi am + ket qua nhan dang, luu ben vung trong SQLite.
+class Recording {
+  final int? id;
+  final String title;
+  final DateTime createdAt;
+  final double? duration;
+  final String? model;
+  final String? language;
+  final String? audioPath;
+  final String transcript;
+  final List<dynamic> segments;
+  final Map<String, dynamic> summary;
+
+  const Recording({
+    this.id,
+    required this.title,
+    required this.createdAt,
+    this.duration,
+    this.model,
+    this.language,
+    this.audioPath,
+    required this.transcript,
+    this.segments = const [],
+    required this.summary,
+  });
+
+  factory Recording.fromResult(
+    Map<String, dynamic> result, {
+    required String title,
+    String? audioPath,
+  }) {
+    final t = (result['transcript'] as Map?) ?? const {};
+    return Recording(
+      title: title,
+      createdAt: DateTime.now(),
+      duration: (t['duration'] as num?)?.toDouble(),
+      model: t['model'] as String?,
+      language: t['language'] as String?,
+      audioPath: audioPath,
+      transcript: (t['text'] ?? '').toString(),
+      segments: (t['segments'] as List?) ?? const [],
+      summary: (result['summary'] as Map?)?.cast<String, dynamic>() ?? const {},
+    );
+  }
+
+  factory Recording.fromMap(Map<String, dynamic> m) => Recording(
+        id: m['id'] as int?,
+        title: (m['title'] ?? '') as String,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
+        duration: (m['duration'] as num?)?.toDouble(),
+        model: m['model'] as String?,
+        language: m['language'] as String?,
+        audioPath: m['audio_path'] as String?,
+        transcript: (m['transcript'] ?? '') as String,
+        segments: _decodeList(m['segments_json']),
+        summary: _decodeMap(m['summary_json']),
+      );
+
+  Map<String, dynamic> toMap() => {
+        if (id != null) 'id': id,
+        'title': title,
+        'created_at': createdAt.millisecondsSinceEpoch,
+        'duration': duration,
+        'model': model,
+        'language': language,
+        'audio_path': audioPath,
+        'transcript': transcript,
+        'segments_json': jsonEncode(segments),
+        'summary_json': jsonEncode(summary),
+      };
+
+  Recording copyWith({int? id, String? title, String? audioPath}) => Recording(
+        id: id ?? this.id,
+        title: title ?? this.title,
+        createdAt: createdAt,
+        duration: duration,
+        model: model,
+        language: language,
+        audioPath: audioPath ?? this.audioPath,
+        transcript: transcript,
+        segments: segments,
+        summary: summary,
+      );
+
+  /// Tieu de goi y tu noi dung transcript (giong cach app ghi chu dat ten).
+  static String suggestTitle(String transcript, {DateTime? at}) {
+    final cleaned = transcript.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty) {
+      final d = at ?? DateTime.now();
+      return 'Ban ghi ${d.day}/${d.month} ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+    }
+    final words = cleaned.split(' ').take(8).join(' ');
+    final title = words.length > 60 ? words.substring(0, 60) : words;
+    return title.replaceAll(RegExp(r'[.,;:!?]+$'), '');
+  }
+
+  static List<dynamic> _decodeList(dynamic raw) {
+    if (raw is! String || raw.isEmpty) return const [];
+    try {
+      final v = jsonDecode(raw);
+      return v is List ? v : const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Map<String, dynamic> _decodeMap(dynamic raw) {
+    if (raw is! String || raw.isEmpty) return const {};
+    try {
+      final v = jsonDecode(raw);
+      return v is Map ? v.cast<String, dynamic>() : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+}

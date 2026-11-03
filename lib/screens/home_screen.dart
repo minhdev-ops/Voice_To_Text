@@ -1,22 +1,30 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
 import '../api_service.dart';
+import '../data/recording.dart';
 
 class HomeScreen extends StatefulWidget {
-  final List<Map<String, dynamic>> recordings;
+  final List<Recording> recordings;
+  final bool loading;
   final ApiService api;
-  final void Function(Map<String, dynamic>) onOpenResult;
+  final void Function(Recording) onOpenResult;
   final VoidCallback onRecord;
   final VoidCallback onPickFile;
+  final Future<void> Function(Recording, String) onRename;
+  final Future<void> Function(Recording) onDelete;
 
   const HomeScreen({
     super.key,
     required this.recordings,
+    required this.loading,
     required this.api,
     required this.onOpenResult,
     required this.onRecord,
     required this.onPickFile,
+    required this.onRename,
+    required this.onDelete,
   });
 
   @override
@@ -27,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Map<String, dynamic>? _health;
   bool _healthLoading = true;
   Timer? _retry;
+  int _retryCount = 0;
 
   @override
   void initState() {
@@ -45,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _retryCount = 0;
       setState(() => _healthLoading = true);
       _checkHealth();
     }
@@ -59,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _healthLoading = false;
     });
     if (h == null) {
-      // Thu lai moi 5 giay cho den khi ket noi duoc (toi da 24 lan ~ 2 phut).
       _retryCount++;
       if (_retryCount <= 24) {
         _retry = Timer(const Duration(seconds: 5), () {
@@ -70,8 +79,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _retryCount = 0;
     }
   }
-
-  int _retryCount = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -92,48 +99,71 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         icon: const Icon(Icons.mic),
         label: const Text('Ghi âm'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _modelStatusCard(theme),
-          const SizedBox(height: 16),
-          Text('Bản ghi gần đây', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (widget.recordings.isEmpty)
-            _emptyState()
-          else
-            ...widget.recordings.map((r) => _recordingTile(context, r, theme)),
-        ],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          _retryCount = 0;
+          setState(() => _healthLoading = true);
+          await _checkHealth();
+        },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          children: [
+            _modelStatusCard(theme),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Text('Bản ghi', style: theme.textTheme.titleMedium),
+                const SizedBox(width: 8),
+                if (widget.recordings.isNotEmpty)
+                  Text(
+                    '(${widget.recordings.length})',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (widget.loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (widget.recordings.isEmpty)
+              _emptyState(theme)
+            else
+              ...widget.recordings.map((r) => _recordingTile(context, r, theme)),
+          ],
+        ),
       ),
     );
   }
 
   Widget _modelStatusCard(ThemeData theme) {
-    Color statusColor;
-    String statusText;
-    IconData statusIcon;
-
+    late final Color color;
+    late final String text;
+    late final IconData icon;
     if (_healthLoading) {
-      statusColor = Colors.grey;
-      statusText = 'Đang kiểm tra...';
-      statusIcon = Icons.hourglass_empty;
+      color = theme.colorScheme.outline;
+      text = 'Đang kiểm tra kết nối...';
+      icon = Icons.sync;
     } else if (_health == null) {
-      statusColor = Colors.red;
-      statusText = 'Không kết nối được backend';
-      statusIcon = Icons.error_outline;
+      color = Colors.red;
+      text = 'Không kết nối được backend · đang thử lại';
+      icon = Icons.error_outline;
     } else {
-      statusColor = Colors.green;
-      statusText = 'Sẵn sàng · Mô hình: ${_health!['model']}';
-      statusIcon = Icons.check_circle;
+      color = Colors.green;
+      text = 'Sẵn sàng · Mô hình: ${_health!['model']}';
+      icon = Icons.check_circle;
     }
-
     return Card(
       child: ListTile(
-        leading: Icon(statusIcon, color: statusColor),
-        title: Text('Trạng thái máy chủ', style: theme.textTheme.titleSmall),
-        subtitle: Text(statusText),
+        leading: Icon(icon, color: color),
+        title: const Text('Trạng thái máy chủ'),
+        subtitle: Text(text),
         trailing: IconButton(
           icon: const Icon(Icons.refresh),
+          tooltip: 'Kiểm tra lại',
           onPressed: () {
             _retryCount = 0;
             setState(() => _healthLoading = true);
@@ -144,49 +174,149 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _emptyState() => Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 48),
-          child: Column(
-            children: [
-              Icon(Icons.mic_none, size: 64, color: Colors.grey.shade400),
-              const SizedBox(height: 16),
-              Text(
-                'Chưa có bản ghi nào',
-                style: TextStyle(color: Colors.grey.shade600),
+  Widget _emptyState(ThemeData theme) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Column(
+          children: [
+            Icon(Icons.graphic_eq, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Chưa có bản ghi nào', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Nhấn “Ghi âm” hoặc nhập một tệp âm thanh để bắt đầu.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
               ),
-              const SizedBox(height: 8),
-              const Text('Nhấn nút Ghi âm để bắt đầu'),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 
-  Widget _recordingTile(
-    BuildContext context,
-    Map<String, dynamic> r,
-    ThemeData theme,
-  ) {
-    final date = r['date'] as DateTime;
-    final transcript = r['transcript'] as Map<String, dynamic>;
-    final text = (transcript['text'] ?? '').toString();
-    final preview = text.length > 60 ? '${text.substring(0, 60)}...' : text;
-    final duration = transcript['duration'];
-
+  Widget _recordingTile(BuildContext context, Recording r, ThemeData theme) {
+    final preview = r.transcript.replaceAll(RegExp(r'\s+'), ' ').trim();
     return Card(
+      margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const Icon(Icons.audio_file, color: Colors.indigo),
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.primaryContainer,
+          child: Icon(Icons.graphic_eq, color: theme.colorScheme.onPrimaryContainer, size: 20),
+        ),
         title: Text(
-          preview.isEmpty ? '(bản ghi trống)' : preview,
-          maxLines: 2,
+          r.title,
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall,
         ),
-        subtitle: Text(
-          '${date.day}/${date.month}/${date.hour}:${date.minute.toString().padLeft(2, '0')}'
-          '${duration != null ? ' · ${duration}s' : ''}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (preview.isNotEmpty)
+              Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Text(
+              _meta(r),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ],
         ),
-        trailing: const Icon(Icons.chevron_right),
+        isThreeLine: preview.isNotEmpty,
         onTap: () => widget.onOpenResult(r),
+        onLongPress: () => _showActions(context, r),
+      ),
+    );
+  }
+
+  String _meta(Recording r) {
+    final d = r.createdAt;
+    final parts = <String>[
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} '
+          '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}',
+    ];
+    if (r.duration != null) {
+      final sec = r.duration!.round();
+      parts.add(sec >= 60
+          ? '${sec ~/ 60} phút ${sec % 60}s'
+          : '${sec}s');
+    }
+    if (r.model != null) parts.add(r.model!);
+    return parts.join(' · ');
+  }
+
+  void _showActions(BuildContext context, Recording r) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('Đổi tên'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showRenameDialog(context, r);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Xóa bản ghi', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmDelete(context, r);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, Recording r) {
+    final ctrl = TextEditingController(text: r.title);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đổi tên bản ghi'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          FilledButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              Navigator.pop(ctx);
+              if (v.isNotEmpty) widget.onRename(r, v);
+            },
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, Recording r) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa bản ghi?'),
+        content: Text('“${r.title}” sẽ bị xóa vĩnh viễn, không thể khôi phục.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onDelete(r);
+            },
+            child: const Text('Xóa'),
+          ),
+        ],
       ),
     );
   }

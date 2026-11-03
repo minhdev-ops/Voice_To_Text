@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+
 import '../api_service.dart';
+import '../data/recording.dart';
 
 class RecordingScreen extends StatefulWidget {
   final AudioRecorder audioRecorder;
   final ApiService api;
   final String language;
   final String model;
-  final void Function(Map<String, dynamic>) onCompleted;
+  final Future<Recording?> Function(Map<String, dynamic>) onCompleted;
 
   const RecordingScreen({
     super.key,
@@ -106,14 +110,23 @@ class _RecordingScreenState extends State<RecordingScreen> {
     }
 
     try {
-      final bytes = await File(path).readAsBytes();
+      // Luu file am thanh vao vung luu tru cua app de con nghe lai duoc.
+      final docs = await getApplicationDocumentsDirectory();
+      final audioDir = Directory(p.join(docs.path, 'recordings'));
+      if (!audioDir.existsSync()) audioDir.createSync(recursive: true);
+      final name =
+          'rec_${DateTime.now().millisecondsSinceEpoch}${p.extension(path)}';
+      final saved = await File(path).copy(p.join(audioDir.path, name));
+
+      final bytes = await saved.readAsBytes();
       final result = await widget.api.transcribeAudio(
         bytes.toList(),
-        'recording.wav',
+        p.basename(saved.path),
         language: widget.language,
         model: widget.model,
       );
-      widget.onCompleted(result);
+      result['_audio_path'] = saved.path;
+      await widget.onCompleted(result);
       if (mounted) {
         Navigator.pop(context, result);
       }

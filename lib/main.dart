@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 
 import 'api_service.dart';
+import 'data/recording.dart';
+import 'data/recording_repository.dart';
 import 'screens/home_screen.dart';
 import 'screens/recording_screen.dart';
 import 'screens/result_screen.dart';
@@ -45,48 +47,57 @@ class _MainShellState extends State<MainShell> {
   String _baseUrl = 'http://127.0.0.1:8000';
   ApiService get _api => ApiService(_baseUrl);
   final _audioRecorder = AudioRecorder();
+  final _repo = RecordingRepository();
   String _language = 'vi';
   String _model = 'large-v3';
-  final List<Map<String, dynamic>> _recordings = [];
+  List<Recording> _recordings = [];
+  bool _loadingList = true;
 
   @override
   void initState() {
     super.initState();
-    _loadModels();
+    _loadRecordings();
   }
 
-  Future<void> _loadModels() async {
-    final models = await _api.listModels();
-    if (models.isNotEmpty && mounted) {
-      setState(() {});
+  Future<void> _loadRecordings() async {
+    try {
+      final items = await _repo.all();
+      if (mounted) setState(() { _recordings = items; _loadingList = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingList = false);
     }
   }
 
-  void _addRecording(Map<String, dynamic> result) {
-    setState(() {
-      _recordings.insert(0, {
-        'id': DateTime.now().millisecondsSinceEpoch,
-        'date': DateTime.now(),
-        'transcript': result['transcript'],
-        'summary': result['summary'],
-      });
-    });
+  /// Luu ket qua nhan dang xuong SQLite (ben vung qua cac lan mo app).
+  Future<Recording?> _saveResult(Map<String, dynamic> result) async {
+    final t = (result['transcript'] as Map?) ?? const {};
+    final text = (t['text'] ?? '').toString();
+    final title = (result['_title'] as String?) ??
+        Recording.suggestTitle(text);
+    final rec = Recording.fromResult(
+      result,
+      title: title,
+      audioPath: result['_audio_path'] as String?,
+    );
+    try {
+      final saved = await _repo.insert(rec);
+      await _loadRecordings();
+      return saved;
+    } catch (_) {
+      return null;
+    }
   }
 
-  void _openResult(Map<String, dynamic> recording) {
-    Navigator.push(
+  Future<void> _openResult(Recording rec) async {
+    await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => ResultScreen(
-          transcript: recording['transcript'] as Map<String, dynamic>,
-          summary: recording['summary'] as Map<String, dynamic>,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => ResultScreen(recording: rec)),
     );
+    await _loadRecordings();
   }
 
   Future<void> _startRecording() async {
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => RecordingScreen(
@@ -94,29 +105,42 @@ class _MainShellState extends State<MainShell> {
           api: _api,
           language: _language,
           model: _model,
-          onCompleted: _addRecording,
+          onCompleted: _saveResult,
         ),
       ),
     );
+    await _loadRecordings();
   }
 
   Future<void> _pickFile() async {
     final res = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (res != null && res.files.single.bytes != null && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultScreen.loading(
-            api: _api,
-            bytes: res.files.single.bytes!.toList(),
-            filename: res.files.single.name,
-            language: _language,
-            model: _model,
-            onCompleted: _addRecording,
-          ),
+    if (res == null || res.files.single.bytes == null || !mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultScreen.loading(
+          api: _api,
+          bytes: res.files.single.bytes!.toList(),
+          filename: res.files.single.name,
+          language: _language,
+          model: _model,
+          onCompleted: _saveResult,
         ),
-      );
-    }
+      ),
+    );
+    await _loadRecordings();
+  }
+
+  Future<void> _renameRecording(Recording rec, String title) async {
+    if (rec.id == null) return;
+    await _repo.rename(rec.id!, title);
+    await _loadRecordings();
+  }
+
+  Future<void> _deleteRecording(Recording rec) async {
+    if (rec.id == null) return;
+    await _repo.delete(rec.id!);
+    await _loadRecordings();
   }
 
   @override
@@ -133,12 +157,19 @@ class _MainShellState extends State<MainShell> {
         children: [
           HomeScreen(
             recordings: _recordings,
+            loading: _loadingList,
             api: _api,
             onOpenResult: _openResult,
             onRecord: _startRecording,
             onPickFile: _pickFile,
+            onRename: _renameRecording,
+            onDelete: _deleteRecording,
           ),
-          SearchScreen(recordings: _recordings, onOpenResult: _openResult),
+          SearchScreen(
+            recordings: _recordings,
+            onOpenResult: _openResult,
+            onDelete: _deleteRecording,
+          ),
           SettingsScreen(
             api: _api,
             baseUrl: _baseUrl,
@@ -159,10 +190,7 @@ class _MainShellState extends State<MainShell> {
             selectedIcon: Icon(Icons.mic),
             label: 'Bản ghi',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            label: 'Tìm kiếm',
-          ),
+          NavigationDestination(icon: Icon(Icons.search), label: 'Tìm kiếm'),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
