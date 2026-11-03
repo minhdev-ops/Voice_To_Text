@@ -52,6 +52,18 @@ class ApiService {
     return const ['tiny', 'base', 'small', 'medium', 'large-v3'];
   }
 
+  Future<Map<String, dynamic>?> checkHealth() async {
+    try {
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/health'))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static (String, String) _mimeFor(String ext) {
     switch (ext) {
       case 'wav':

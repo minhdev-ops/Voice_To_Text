@@ -154,18 +154,44 @@ _STOPWORDS = {
     "voi", "tu", "khi", "da", "se", "co", "khong", "mot", "nguoi", "chung", "ta",
     "toi", "ban", "anh", "chi", "em", "ve", "rat", "cung", "dang", "thi", "nhu",
     "tai", "theo", "vao", "ra", "len", "xuong", "qua", "lai", "nao", "gi", "the",
+    "hay", "hoac", "nen", "vi", "boi", "den", "di", "noi", "vay", "roi", "nhe",
+    "cai", "chiec", "con", "moi", "vua", "biet", "lam", "sao", "nhi", "oi", "a",
+    "no", "ho", "minh", "ban", "cung", "that", "qua", "hon", "kem", "moi",
 }
 
+_NUM_RE = re.compile(r"^\d+$")
 
-def _extract_topics(text: str, top_n: int = 8) -> list:
-    words = re.findall(r"[\w]+", text.lower())
-    freq = {}
-    for w in words:
-        if len(w) < 3 or w in _STOPWORDS:
+
+def _tokenize(text: str) -> list:
+    return re.findall(r"[\w]+", text.lower(), re.UNICODE)
+
+
+def _extract_topics(text: str, top_n: int = 6) -> list:
+    """Trich cum tu khoa co nghia (1-3 tu) theo tan suat, uu tien cum dai hon."""
+    words = _tokenize(text)
+    if not words:
+        return []
+    norm = [_remove_diacritics(w) for w in words]
+    counts: dict = {}
+    for n in (3, 2, 1):
+        for i in range(len(words) - n + 1):
+            gram = norm[i:i + n]
+            if any(len(g) < 2 or _NUM_RE.match(g) for g in gram):
+                continue
+            if any(g in _STOPWORDS for g in gram):
+                continue
+            phrase = " ".join(words[i:i + n])
+            counts[phrase] = counts.get(phrase, 0) + 1
+    scored = [(p, c * (len(p.split()) ** 1.6)) for p, c in counts.items()]
+    scored.sort(key=lambda kv: (-kv[1], -len(kv[0])))
+    out: list = []
+    for phrase, _ in scored:
+        if any(phrase in o or o in phrase for o in out):
             continue
-        freq[w] = freq.get(w, 0) + 1
-    ranked = sorted(freq.items(), key=lambda kv: kv[1], reverse=True)
-    return [w for w, _ in ranked[:top_n]]
+        out.append(phrase)
+        if len(out) >= top_n:
+            break
+    return out
 
 
 def _normalize(data: dict) -> dict:

@@ -1,45 +1,53 @@
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+
 import 'api_service.dart';
-import 'result_view.dart';
+import 'screens/home_screen.dart';
+import 'screens/recording_screen.dart';
+import 'screens/result_screen.dart';
+import 'screens/search_screen.dart';
+import 'screens/settings_screen.dart';
 
-void main() => runApp(const MyApp());
+void main() => runApp(const VietVoiceApp());
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class VietVoiceApp extends StatelessWidget {
+  const VietVoiceApp({super.key});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Auvira - Voice To Text',
-        theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
-        home: const HomePage(),
+        title: 'VietVoice',
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: Colors.indigo,
+          brightness: Brightness.light,
+        ),
+        darkTheme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: Colors.indigo,
+          brightness: Brightness.dark,
+        ),
+        themeMode: ThemeMode.system,
+        home: const MainShell(),
+        debugShowCheckedModeBanner: false,
       );
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class MainShell extends StatefulWidget {
+  const MainShell({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<MainShell> createState() => _MainShellState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final _baseUrl = TextEditingController(text: 'http://127.0.0.1:8000');
-  final _language = TextEditingController(text: 'vi');
+class _MainShellState extends State<MainShell> {
+  int _currentIndex = 0;
+  String _baseUrl = 'http://127.0.0.1:8000';
+  ApiService get _api => ApiService(_baseUrl);
   final _audioRecorder = AudioRecorder();
-
-  List<String> _models = const ['tiny', 'base', 'small', 'medium', 'large-v3'];
+  String _language = 'vi';
   String _model = 'large-v3';
-  bool _loading = false;
-  bool _recording = false;
-  String? _error;
-  Map<String, dynamic>? _transcript;
-  Map<String, dynamic>? _summary;
-
-  ApiService get api => ApiService(_baseUrl.text.trim());
+  final List<Map<String, dynamic>> _recordings = [];
 
   @override
   void initState() {
@@ -48,174 +56,120 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadModels() async {
-    try {
-      final m = await api.listModels();
-      if (m.isNotEmpty) setState(() => _models = m);
-    } catch (_) {}
+    final models = await _api.listModels();
+    if (models.isNotEmpty && mounted) {
+      setState(() {});
+    }
   }
 
-  Future<void> _process(List<int> bytes, String filename) async {
+  void _addRecording(Map<String, dynamic> result) {
     setState(() {
-      _loading = true;
-      _error = null;
-      _transcript = null;
-      _summary = null;
-    });
-    try {
-      final lang = _language.text.trim().isEmpty ? null : _language.text.trim();
-      final res = await api.transcribeAudio(bytes, filename,
-          language: lang, model: _model);
-      setState(() {
-        _transcript = res['transcript'] as Map<String, dynamic>;
-        _summary = res['summary'] as Map<String, dynamic>;
+      _recordings.insert(0, {
+        'id': DateTime.now().millisecondsSinceEpoch,
+        'date': DateTime.now(),
+        'transcript': result['transcript'],
+        'summary': result['summary'],
       });
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      setState(() => _loading = false);
-    }
+    });
+  }
+
+  void _openResult(Map<String, dynamic> recording) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultScreen(
+          transcript: recording['transcript'] as Map<String, dynamic>,
+          summary: recording['summary'] as Map<String, dynamic>,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordingScreen(
+          audioRecorder: _audioRecorder,
+          api: _api,
+          language: _language,
+          model: _model,
+          onCompleted: _addRecording,
+        ),
+      ),
+    );
   }
 
   Future<void> _pickFile() async {
     final res = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (res != null && res.files.single.bytes != null) {
-      await _process(res.files.single.bytes!, res.files.single.name);
-    }
-  }
-
-  Future<void> _toggleRecord() async {
-    if (_recording) {
-      final path = await _audioRecorder.stop();
-      setState(() => _recording = false);
-      if (path != null) {
-        final bytes = await File(path).readAsBytes();
-        await _process(bytes.toList(), 'recording.wav');
-      }
-    } else {
-      if (await _audioRecorder.hasPermission()) {
-        final dir = await getTemporaryDirectory();
-        final path =
-            '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
-        const config = RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-          bitRate: 256000,
-        );
-        await _audioRecorder.start(config, path: path);
-        setState(() => _recording = true);
-      } else {
-        setState(() => _error = 'Chưa được cấp quyền ghi âm (microphone).');
-      }
+    if (res != null && res.files.single.bytes != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultScreen.loading(
+            api: _api,
+            bytes: res.files.single.bytes!.toList(),
+            filename: res.files.single.name,
+            language: _language,
+            model: _model,
+            onCompleted: _addRecording,
+          ),
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
     _audioRecorder.dispose();
-    _baseUrl.dispose();
-    _language.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Auvira — Voice To Text')),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _settingsCard(),
-                    const SizedBox(height: 16),
-                    if (_error != null) _errorCard(),
-                    if (_transcript != null && _summary != null)
-                      ResultView(transcript: _transcript!, summary: _summary!)
-                    else
-                      _actionCard(),
-                  ],
-                ),
-              ),
-      );
-
-  Widget _settingsCard() => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              TextField(
-                controller: _baseUrl,
-                decoration: const InputDecoration(
-                  labelText: 'Backend URL',
-                  hintText: 'http://127.0.0.1:8000',
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _language,
-                decoration: const InputDecoration(
-                  labelText: 'Ngôn ngữ (vi/en, để trống = tự nhận)',
-                  hintText: 'vi',
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: _model,
-                items: _models
-                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                    .toList(),
-                onChanged: (v) => setState(() => _model = v!),
-                decoration:
-                    const InputDecoration(labelText: 'Mô hình Whisper'),
-              ),
-            ],
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          HomeScreen(
+            recordings: _recordings,
+            api: _api,
+            onOpenResult: _openResult,
+            onRecord: _startRecording,
+            onPickFile: _pickFile,
           ),
-        ),
-      );
-
-  Widget _errorCard() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(_error!, style: const TextStyle(color: Colors.red)),
-      );
-
-  Widget _actionCard() => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              const Text(
-                  'Ghi âm cuộc họp hoặc tải lên file âm thanh để chép lời & tóm tắt.'),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _toggleRecord,
-                      icon: Icon(_recording ? Icons.stop : Icons.mic),
-                      label: Text(_recording ? 'Dừng ghi âm' : 'Ghi âm'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _pickFile,
-                      icon: const Icon(Icons.upload_file),
-                      label: const Text('Tải file'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          SearchScreen(recordings: _recordings, onOpenResult: _openResult),
+          SettingsScreen(
+            api: _api,
+            baseUrl: _baseUrl,
+            language: _language,
+            model: _model,
+            onBaseUrlChanged: (v) => setState(() => _baseUrl = v),
+            onLanguageChanged: (v) => setState(() => _language = v),
+            onModelChanged: (v) => setState(() => _model = v),
           ),
-        ),
-      );
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.mic_none),
+            selectedIcon: Icon(Icons.mic),
+            label: 'Bản ghi',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.search),
+            label: 'Tìm kiếm',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Cài đặt',
+          ),
+        ],
+      ),
+    );
+  }
 }
