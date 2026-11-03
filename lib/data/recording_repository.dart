@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -96,6 +97,18 @@ class RecordingRepository {
 
   Future<void> delete(int id) async {
     final db = await _database();
+    final rows = await db.query(
+      'recordings',
+      columns: ['audio_path'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     await db.delete('recordings', where: 'id = ?', whereArgs: [id]);
+    final path = rows.isEmpty ? null : rows.first['audio_path'] as String?;
+    if (path != null && path.isNotEmpty) {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    }
   }
 }
