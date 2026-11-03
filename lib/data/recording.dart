@@ -11,6 +11,8 @@ class Recording {
   final String? audioPath;
   final String transcript;
   final List<dynamic> segments;
+  final Map<String, String> speakers;
+  final bool diarized;
   final Map<String, dynamic> summary;
 
   const Recording({
@@ -23,6 +25,8 @@ class Recording {
     this.audioPath,
     required this.transcript,
     this.segments = const [],
+    this.speakers = const {},
+    this.diarized = false,
     required this.summary,
   });
 
@@ -32,6 +36,10 @@ class Recording {
     String? audioPath,
   }) {
     final t = (result['transcript'] as Map?) ?? const {};
+    final segs = (t['segments'] as List?) ?? const [];
+    final diar = t['diarization'] as Map?;
+    final isDiarized = (diar != null && (diar['num_speakers'] ?? 0) > 0) ||
+        segs.any((x) => (x as Map?)?['speaker'] != null);
     return Recording(
       title: title,
       createdAt: DateTime.now(),
@@ -40,7 +48,9 @@ class Recording {
       language: t['language'] as String?,
       audioPath: audioPath,
       transcript: (t['text'] ?? '').toString(),
-      segments: (t['segments'] as List?) ?? const [],
+      segments: segs,
+      speakers: const {},
+      diarized: isDiarized,
       summary: (result['summary'] as Map?)?.cast<String, dynamic>() ?? const {},
     );
   }
@@ -55,6 +65,8 @@ class Recording {
         audioPath: m['audio_path'] as String?,
         transcript: (m['transcript'] ?? '') as String,
         segments: _decodeList(m['segments_json']),
+        speakers: _decodeStrMap(m['speakers_json']),
+        diarized: (m['diarized'] as int? ?? 0) == 1,
         summary: _decodeMap(m['summary_json']),
       );
 
@@ -68,6 +80,8 @@ class Recording {
         'audio_path': audioPath,
         'transcript': transcript,
         'segments_json': jsonEncode(segments),
+        'speakers_json': jsonEncode(speakers),
+        'diarized': diarized ? 1 : 0,
         'summary_json': jsonEncode(summary),
       };
 
@@ -75,6 +89,10 @@ class Recording {
     int? id,
     String? title,
     String? audioPath,
+    String? transcript,
+    List<dynamic>? segments,
+    Map<String, String>? speakers,
+    bool? diarized,
     Map<String, dynamic>? summary,
   }) => Recording(
         id: id ?? this.id,
@@ -84,8 +102,10 @@ class Recording {
         model: model,
         language: language,
         audioPath: audioPath ?? this.audioPath,
-        transcript: transcript,
-        segments: segments,
+        transcript: transcript ?? this.transcript,
+        segments: segments ?? this.segments,
+        speakers: speakers ?? this.speakers,
+        diarized: diarized ?? this.diarized,
         summary: summary ?? this.summary,
       );
 
@@ -119,5 +139,10 @@ class Recording {
     } catch (_) {
       return const {};
     }
+  }
+
+  static Map<String, String> _decodeStrMap(dynamic raw) {
+    final m = _decodeMap(raw);
+    return m.map((k, v) => MapEntry(k, v.toString()));
   }
 }

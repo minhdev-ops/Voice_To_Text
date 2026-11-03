@@ -1,4 +1,3 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 
@@ -6,6 +5,7 @@ import 'api_service.dart';
 import 'data/recording.dart';
 import 'data/recording_repository.dart';
 import 'screens/home_screen.dart';
+import 'screens/import_screen.dart';
 import 'screens/recording_screen.dart';
 import 'screens/result_screen.dart';
 import 'screens/search_screen.dart';
@@ -99,6 +99,7 @@ class _MainShellState extends State<MainShell> {
             if (r.id != null) await _repo.updateSummary(r.id!, s);
             await _loadRecordings();
           },
+          onEdited: _updateContent,
         ),
       ),
     );
@@ -121,21 +122,32 @@ class _MainShellState extends State<MainShell> {
     await _loadRecordings();
   }
 
+  /// Mo man hinh nhap tep am thanh (UI-03).
   Future<void> _pickFile() async {
-    final res = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (res == null || res.files.single.bytes == null || !mounted) return;
+    if (!mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ResultScreen.loading(
+        builder: (_) => ImportScreen(
           api: _api,
-          bytes: res.files.single.bytes!.toList(),
-          filename: res.files.single.name,
           language: _language,
           model: _model,
           onCompleted: _saveResult,
         ),
       ),
+    );
+    await _loadRecordings();
+  }
+
+  /// Luu lai ban chep loi da sua hoac nguoi noi (UI-05/UI-07).
+  Future<void> _updateContent(Recording rec) async {
+    if (rec.id == null) return;
+    await _repo.updateContent(
+      rec.id!,
+      transcript: rec.transcript,
+      segments: rec.segments,
+      speakers: rec.speakers,
+      diarized: rec.diarized,
     );
     await _loadRecordings();
   }

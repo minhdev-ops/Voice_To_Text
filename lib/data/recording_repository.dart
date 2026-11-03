@@ -15,25 +15,15 @@ class RecordingRepository {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'vietvoice.db'),
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE recordings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            duration REAL,
-            model TEXT,
-            language TEXT,
-            audio_path TEXT,
-            transcript TEXT NOT NULL,
-            segments_json TEXT,
-            summary_json TEXT
-          )
-        ''');
-        await db.execute(
-          'CREATE INDEX idx_recordings_created ON recordings(created_at DESC)',
-        );
+        await _createTable(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE recordings ADD COLUMN speakers_json TEXT');
+          await db.execute('ALTER TABLE recordings ADD COLUMN diarized INTEGER');
+        }
       },
     );
     return _db!;
@@ -92,6 +82,47 @@ class RecordingRepository {
       {'summary_json': jsonEncode(summary)},
       where: 'id = ?',
       whereArgs: [id],
+    );
+  }
+
+  /// Luu lai phan chep loi da sua, danh sach nguoi noi va cac doan (UI-05/UI-07).
+  Future<void> updateContent(
+    int id, {
+    String? transcript,
+    List<dynamic>? segments,
+    Map<String, String>? speakers,
+    bool? diarized,
+  }) async {
+    final db = await _database();
+    final values = <String, Object?>{};
+    if (transcript != null) values['transcript'] = transcript;
+    if (segments != null) values['segments_json'] = jsonEncode(segments);
+    if (speakers != null) values['speakers_json'] = jsonEncode(speakers);
+    if (diarized != null) values['diarized'] = diarized ? 1 : 0;
+    if (values.isNotEmpty) {
+      await db.update('recordings', values, where: 'id = ?', whereArgs: [id]);
+    }
+  }
+
+  static Future<void> _createTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE recordings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        duration REAL,
+        model TEXT,
+        language TEXT,
+        audio_path TEXT,
+        transcript TEXT NOT NULL,
+        segments_json TEXT,
+        speakers_json TEXT,
+        diarized INTEGER,
+        summary_json TEXT
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_recordings_created ON recordings(created_at DESC)',
     );
   }
 

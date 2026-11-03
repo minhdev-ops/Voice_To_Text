@@ -17,11 +17,18 @@ def process_audio(
     language: str | None = None,
     model_size: str | None = None,
     progress: Callable | None = None,
+    diarize: bool = False,
+    num_speakers: int | None = None,
 ) -> dict:
     audio_path = Path(audio_path)
     language = language or DEFAULT_LANGUAGE
     transcript = transcribe_file(
-        audio_path, language=language, model_size=model_size, progress=progress
+        audio_path,
+        language=language,
+        model_size=model_size,
+        progress=progress,
+        diarize=diarize,
+        num_speakers=num_speakers,
     )
     summary = summarize_transcript(transcript["text"], language=transcript["language"])
     result = {

@@ -64,6 +64,8 @@ def transcribe_file(
     model_size: str | None = None,
     device: str = "auto",
     progress: Callable | None = None,
+    diarize: bool = False,
+    num_speakers: int | None = None,
 ) -> dict:
     audio_path = Path(audio_path)
     if not audio_path.is_file():
@@ -98,6 +100,8 @@ def transcribe_file(
                 "end": round(float(seg.end), 2),
                 "text": seg.text.strip(),
                 "speaker": None,
+                "confidence": round(float(getattr(seg, "avg_logprob", 0.0) or 0.0), 3),
+                "no_speech": round(float(getattr(seg, "no_speech_prob", 0.0) or 0.0), 3),
             })
             parts.append(seg.text.strip())
             if progress is not None:
@@ -122,9 +126,32 @@ def transcribe_file(
         retry = _run(False)
         if retry["text"]:
             retry["vad_fallback"] = True
-            return retry
-        result["vad_fallback"] = True
+            result = retry
+        else:
+            result["vad_fallback"] = True
+
+    if diarize and result["segments"]:
+        result["diarization"] = _apply_diarization(
+            audio_path, result["segments"], num_speakers
+        )
     return result
+
+
+def _apply_diarization(
+    audio_path: Path,
+    segments: list[dict],
+    num_speakers: int | None,
+) -> dict:
+    from .diarize import diarize_segments
+
+    try:
+        info = diarize_segments(audio_path, segments, num_speakers=num_speakers)
+    except Exception as e:  # noqa: BLE001
+        # Khong de loi phan tich nguoi noi lam hong ket qua chep loi.
+        return {"error": str(e), "speakers": [], "num_speakers": 0}
+    for seg, label in zip(segments, info["speakers"]):
+        seg["speaker"] = label
+    return info
 
 
 def stream_transcribe(

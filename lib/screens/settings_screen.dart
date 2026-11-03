@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api_service.dart';
+import 'models_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ApiService api;
@@ -230,6 +231,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.info_outline),
             title: const Text('Mô hình lớn = chính xác hơn nhưng chậm hơn'),
             subtitle: Text('Đang dùng: ${widget.model}'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_download),
+            title: const Text('Quản lý mô hình'),
+            subtitle: const Text('Tải về / xóa mô hình Whisper trên máy'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ModelsScreen(api: widget.api),
+              ),
+            ),
           ),
         ],
       );

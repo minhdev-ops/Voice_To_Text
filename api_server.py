@@ -18,6 +18,7 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from src import models_registry
 from src.config import DEFAULT_LANGUAGE, WHISPER_MODEL
 from src.core import process_audio, process_text
 from src.summarize import configure_llm, llm_status, summarize_transcript
@@ -73,6 +74,67 @@ def models():
     return {"models": list_models(), "default": WHISPER_MODEL}
 
 
+# ---------------------------------------------------------------- mo hinh (UI-11)
+
+
+@app.get("/api/models/status")
+def models_status():
+    return {
+        "default": WHISPER_MODEL,
+        "models": models_registry.list_status(),
+        "download": models_registry.download_status(),
+    }
+
+
+class ModelRequest(BaseModel):
+    name: str
+
+
+@app.post("/api/models/download")
+def model_download(req: ModelRequest):
+    return models_registry.start_download(req.name)
+
+
+@app.get("/api/models/download")
+def model_download_status():
+    return models_registry.download_status()
+
+
+@app.post("/api/models/delete")
+def model_delete(req: ModelRequest):
+    return models_registry.delete_model(req.name)
+
+
+# ------------------------------------------------------- phan biet nguoi noi (UI-07)
+
+
+class DiarizeRequest(BaseModel):
+    segments: list[dict]
+    num_speakers: int | None = None
+
+
+@app.post("/api/diarize")
+def diarize(
+    file: UploadFile = File(...),
+    segments: str = Form(...),
+    num_speakers: int | None = Form(None),
+):
+    """Gan lai nhan nguoi noi cho transcript da co (khong chep loi lai)."""
+    import json
+
+    from src.diarize import diarize_segments
+
+    segs = json.loads(segments)
+    suffix = Path(file.filename).suffix or ".wav"
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / f"audio{suffix}"
+        path.write_bytes(file.file.read())
+        info = diarize_segments(path, segs, num_speakers=num_speakers)
+    for seg, label in zip(segs, info["speakers"]):
+        seg["speaker"] = label
+    return {"segments": segs, **info}
+
+
 class SummarizeRequest(BaseModel):
     text: str
     language: str | None = None
@@ -114,6 +176,8 @@ def transcribe(
     file: UploadFile = File(...),
     language: str | None = Form(None),
     model: str | None = Form(None),
+    diarize: bool = Form(False),
+    num_speakers: int | None = Form(None),
 ):
     suffix = Path(file.filename).suffix or ".wav"
     with tempfile.TemporaryDirectory() as td:
@@ -124,6 +188,8 @@ def transcribe(
             out_dir=None,
             language=language or None,
             model_size=model,
+            diarize=diarize,
+            num_speakers=num_speakers,
         )
     return {
         "transcript": result["transcript"],

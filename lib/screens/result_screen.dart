@@ -8,20 +8,61 @@ import 'package:just_audio/just_audio.dart';
 import '../api_service.dart';
 import '../data/recording.dart';
 import '../export/exporter.dart';
+import 'speakers_screen.dart';
+
+/// Wrapper tien loi cho man hinh ket qua tu tep ben ngoai (UI-03).
+class ResultLoadRoute extends StatelessWidget {
+  final ApiService api;
+  final String filePath;
+  final String filename;
+  final String language;
+  final String model;
+  final bool diarize;
+  final int? numSpeakers;
+  final String audioPath;
+  final Future<Recording?> Function(Map<String, dynamic>) onCompleted;
+
+  const ResultLoadRoute({
+    super.key,
+    required this.api,
+    required this.filePath,
+    required this.filename,
+    required this.language,
+    required this.model,
+    this.diarize = false,
+    this.numSpeakers,
+    required this.audioPath,
+    required this.onCompleted,
+  });
+
+  @override
+  Widget build(BuildContext context) => ResultScreen.loading(
+        api: api,
+        path: filePath,
+        filename: filename,
+        language: language,
+        model: model,
+        diarize: diarize,
+        numSpeakers: numSpeakers,
+        audioPath: audioPath,
+        onCompleted: onCompleted,
+      );
+}
 
 class ResultScreen extends StatefulWidget {
-  /// Xem lai mot ban ghi da luu.
   final Recording? recording;
-
-  /// Backend (de tao lai tom tat bang AI).
   final ApiService? api;
-
-  /// Goi khi tom tat duoc cap nhat (de luu xuong SQLite).
   final Future<void> Function(Recording, Map<String, dynamic>)? onSummaryUpdated;
+  final Future<void> Function(Recording)? onEdited;
+
   final List<int>? bytes;
+  final String? path;
   final String? filename;
   final String? language;
   final String? model;
+  final bool diarize;
+  final int? numSpeakers;
+  final String? audioPath;
   final Future<Recording?> Function(Map<String, dynamic>)? onCompleted;
 
   const ResultScreen({
@@ -29,22 +70,32 @@ class ResultScreen extends StatefulWidget {
     required this.recording,
     this.api,
     this.onSummaryUpdated,
+    this.onEdited,
   })  : bytes = null,
+        path = null,
         filename = null,
         language = null,
         model = null,
+        diarize = false,
+        numSpeakers = null,
+        audioPath = null,
         onCompleted = null;
 
   const ResultScreen.loading({
     super.key,
     required this.api,
-    required this.bytes,
+    this.path,
+    this.bytes,
     required this.filename,
     required this.language,
     required this.model,
+    this.diarize = false,
+    this.numSpeakers,
+    this.audioPath,
     required this.onCompleted,
   })  : recording = null,
-        onSummaryUpdated = null;
+        onSummaryUpdated = null,
+        onEdited = null;
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -64,6 +115,13 @@ class _ResultScreenState extends State<ResultScreen>
   double _speed = 1.0;
   final List<StreamSubscription> _subs = [];
 
+  // --- che do sua (UI-05) ---
+  bool _editing = false;
+  List<dynamic> _editSegments = [];
+  String _editText = '';
+  final List<List<dynamic>> _undo = [];
+  final List<List<dynamic>> _redo = [];
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +130,8 @@ class _ResultScreenState extends State<ResultScreen>
     if (_rec == null) {
       _load();
     } else {
+      _editText = _rec!.transcript;
+      _editSegments = _rec!.segments.map((e) => Map.from(e)).toList();
       _initPlayer();
     }
   }
@@ -79,14 +139,28 @@ class _ResultScreenState extends State<ResultScreen>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final result = await widget.api!.transcribeAudio(
-        widget.bytes!,
-        widget.filename!,
-        language: widget.language,
-        model: widget.model,
-      );
+      final result = widget.path != null
+          ? await widget.api!.transcribeFile(
+              widget.path!,
+              widget.filename!,
+              language: widget.language,
+              model: widget.model,
+              diarize: widget.diarize,
+              numSpeakers: widget.numSpeakers,
+            )
+          : await widget.api!.transcribeAudio(
+              widget.bytes!,
+              widget.filename!,
+              language: widget.language,
+              model: widget.model,
+            );
+      result['_audio_path'] = widget.audioPath;
       final saved = await widget.onCompleted?.call(result);
       final t = (result['transcript'] as Map?) ?? const {};
+      final segs = (t['segments'] as List?) ?? const [];
+      final diar = t['diarization'] as Map?;
+      final isDiar = (diar != null && (diar['num_speakers'] ?? 0) > 0) ||
+          segs.any((x) => (x as Map?)?['speaker'] != null);
       setState(() {
         _rec = saved ??
             Recording(
@@ -95,21 +169,21 @@ class _ResultScreenState extends State<ResultScreen>
               duration: (t['duration'] as num?)?.toDouble(),
               model: t['model'] as String?,
               language: t['language'] as String?,
+              audioPath: widget.audioPath,
               transcript: (t['text'] ?? '').toString(),
-              segments: (t['segments'] as List?) ?? const [],
+              segments: segs,
+              speakers: const {},
+              diarized: isDiar,
               summary: (result['summary'] as Map?)?.cast<String, dynamic>() ??
                   const {},
             );
+        _editText = _rec!.transcript;
+        _editSegments = _rec!.segments.map((e) => Map.from(e)).toList();
         _loading = false;
       });
       await _initPlayer();
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
@@ -151,6 +225,95 @@ class _ResultScreenState extends State<ResultScreen>
     super.dispose();
   }
 
+  void _pushUndo() {
+    _undo.add(_editSegments.map((e) => Map.from(e)).toList());
+    if (_undo.length > 50) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  void _enterEdit() {
+    _pushUndo();
+    setState(() {
+      _editing = true;
+      _editSegments = _rec!.segments.map((e) => Map.from(e)).toList();
+    });
+  }
+
+  void _onSegChanged(int i, String v) {
+    _editSegments[i]['text'] = v;
+    _rebuildText();
+  }
+
+  void _rebuildText() {
+    _editText = _editSegments
+        .map((s) => (s['text'] ?? '').toString().trim())
+        .where((t) => t.isNotEmpty)
+        .join(' ');
+  }
+
+  Future<void> _saveEdits() async {
+    _rebuildText();
+    final updated = _rec!.copyWith(
+      transcript: _editText,
+      segments: _editSegments,
+    );
+    setState(() {
+      _rec = updated;
+      _editing = false;
+    });
+    await widget.onEdited?.call(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Đã lưu bản chép lời')));
+  }
+
+  void _findReplace() {
+    final findCtrl = TextEditingController();
+    final repCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tìm và thay thế'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: findCtrl,
+              decoration: const InputDecoration(labelText: 'Từ cần tìm'),
+            ),
+            TextField(
+              controller: repCtrl,
+              decoration: const InputDecoration(labelText: 'Thay bằng'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final f = findCtrl.text;
+              final r = repCtrl.text;
+              if (f.isNotEmpty) {
+                for (final s in _editSegments) {
+                  s['text'] = (s['text'] ?? '')
+                      .toString()
+                      .replaceAll(f, r);
+                }
+                _rebuildText();
+              }
+              Navigator.pop(ctx);
+              setState(() {});
+            },
+            child: const Text('Thay thế'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rec = _rec;
@@ -168,9 +331,8 @@ class _ResultScreenState extends State<ResultScreen>
               tooltip: 'Sao chép bản chép lời',
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: rec.transcript));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã sao chép bản chép lời')),
-                );
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('Đã sao chép')));
               },
             ),
             PopupMenuButton<ExportFormat>(
@@ -204,6 +366,17 @@ class _ResultScreenState extends State<ResultScreen>
                 ),
               ],
             ),
+            if (rec.diarized || rec.segments.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.record_voice_over),
+                tooltip: 'Quản lý người nói',
+                onPressed: _openSpeakers,
+              ),
+            IconButton(
+              icon: Icon(_editing ? Icons.save : Icons.edit),
+              tooltip: _editing ? 'Lưu' : 'Sửa chép lời',
+              onPressed: _editing ? _saveEdits : _enterEdit,
+            ),
           ],
         ],
         bottom: rec != null
@@ -224,7 +397,10 @@ class _ResultScreenState extends State<ResultScreen>
                   ? const SizedBox()
                   : Column(
                       children: [
-                        if (_player != null) _playerBar(),
+                        if (_editing)
+                          _editToolbar()
+                        else if (_player != null)
+                          _playerBar(),
                         Expanded(
                           child: TabBarView(
                             controller: _tabController,
@@ -239,14 +415,81 @@ class _ResultScreenState extends State<ResultScreen>
     );
   }
 
+  Widget _editToolbar() => Container(
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.undo),
+              tooltip: 'Hoàn tác',
+              onPressed: _undo.isEmpty
+                  ? null
+                  : () {
+                      _redo.add(_editSegments.map((e) => Map.from(e)).toList());
+                      final prev = _undo.removeLast();
+                      setState(() {
+                        _editSegments = prev;
+                        _rebuildText();
+                      });
+                    },
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo),
+              tooltip: 'Làm lại',
+              onPressed: _redo.isEmpty
+                  ? null
+                  : () {
+                      _undo.add(_editSegments.map((e) => Map.from(e)).toList());
+                      final next = _redo.removeLast();
+                      setState(() {
+                        _editSegments = next;
+                        _rebuildText();
+                      });
+                    },
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.find_replace),
+              label: const Text('Tìm / thay'),
+              onPressed: _findReplace,
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => setState(() {
+                _editing = false;
+                _undo.clear();
+                _redo.clear();
+              }),
+              child: const Text('Hủy'),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _openSpeakers() async {
+    if (_rec == null || widget.api == null) return;
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SpeakersScreen(
+          api: widget.api!,
+          recording: _rec!,
+        ),
+      ),
+    );
+    if (result is Recording && mounted) {
+      setState(() => _rec = result);
+      await widget.onEdited?.call(result);
+    }
+  }
+
   Future<void> _export(Recording rec, ExportFormat fmt) async {
     try {
       await Exporter.share(rec, fmt);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Xuất thất bại: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Xuất thất bại: $e')));
     }
   }
 
@@ -263,23 +506,13 @@ class _ResultScreenState extends State<ResultScreen>
     if (!mounted) return;
     setState(() => _resummarizing = false);
     if (s == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không tạo được tóm tắt. Kiểm tra kết nối backend.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Không tạo được tóm tắt. Kiểm tra kết nối backend.')));
       return;
     }
     final updated = rec.copyWith(summary: s);
     setState(() => _rec = updated);
     await widget.onSummaryUpdated?.call(updated, s);
-    if (!mounted) return;
-    final isLlm = (s['method'] ?? '') == 'llm';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(isLlm
-            ? 'Đã tóm tắt bằng AI'
-            : 'Đã tóm tắt bằng quy tắc (chưa cấu hình AI trong Cài đặt)'),
-      ),
-    );
   }
 
   Widget _loadingView() => const Center(
@@ -392,8 +625,61 @@ class _ResultScreenState extends State<ResultScreen>
     );
   }
 
+  String _speakerName(String? spk, Map<String, String> names) {
+    if (spk == null || spk.isEmpty) return '';
+    return names[spk] ?? spk;
+  }
+
   Widget _transcriptTab(Recording rec) {
     final theme = Theme.of(context);
+    if (_editing) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('Sửa từng đoạn, rồi nhấn Lưu.',
+                style: TextStyle(color: Colors.grey)),
+          ),
+          ..._editSegments.asMap().entries.map((e) {
+            final i = e.key;
+            final s = e.value as Map;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        _fmt(Duration(
+                            milliseconds: ((s['start'] as num?)?.toDouble() ?? 0) * 1000 ~/ 1)),
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.primary),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: TextEditingController(text: s['text'] ?? ''),
+                      onChanged: (v) => _onSegChanged(i, v),
+                      maxLines: null,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -409,6 +695,8 @@ class _ResultScreenState extends State<ResultScreen>
                   _chip(Icons.timer, '${rec.duration!.round()}s'),
                 if (rec.model != null) _chip(Icons.memory, rec.model!),
                 _chip(Icons.notes, '${rec.transcript.split(' ').length} từ'),
+                if (rec.diarized)
+                  _chip(Icons.record_voice_over, '${rec.speakers.length} người nói'),
               ],
             ),
           ),
@@ -419,6 +707,10 @@ class _ResultScreenState extends State<ResultScreen>
             final seg = s as Map;
             final start = (seg['start'] as num?)?.toDouble() ?? 0;
             final text = (seg['text'] ?? '').toString();
+            final spk = seg['speaker'] as String?;
+            final conf = (seg['confidence'] as num?)?.toDouble() ?? 0;
+            final low = conf < -1.0;
+            final name = _speakerName(spk, rec.speakers);
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Row(
@@ -432,16 +724,38 @@ class _ResultScreenState extends State<ResultScreen>
                     child: SizedBox(
                       width: 74,
                       child: Text(
-                        _fmt(Duration(milliseconds: (start * 1000).round())),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
+                        _fmt(Duration(
+                            milliseconds: (start * 1000).round())),
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.primary),
                       ),
                     ),
                   ),
+                  if (name.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6, top: 2),
+                      child: Chip(
+                        label: Text(name),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
                   Expanded(
-                    child: SelectableText(text,
-                        style: theme.textTheme.bodyMedium),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: SelectableText(text,
+                              style: theme.textTheme.bodyMedium),
+                        ),
+                        if (low)
+                          Tooltip(
+                            message: 'Đoạn này nhận dạng chưa chắc chắn',
+                            child: Icon(Icons.warning_amber_rounded,
+                                size: 16, color: Colors.orange.shade400),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
