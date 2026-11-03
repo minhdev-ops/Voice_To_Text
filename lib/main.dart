@@ -32,7 +32,7 @@ class _HomePageState extends State<HomePage> {
   final _audioRecorder = AudioRecorder();
 
   List<String> _models = const ['tiny', 'base', 'small', 'medium', 'large-v3'];
-  String _model = 'base';
+  String _model = 'large-v3';
   bool _loading = false;
   bool _recording = false;
   String? _error;
@@ -89,14 +89,20 @@ class _HomePageState extends State<HomePage> {
       setState(() => _recording = false);
       if (path != null) {
         final bytes = await File(path).readAsBytes();
-        await _process(bytes.toList(), 'recording.m4a');
+        await _process(bytes.toList(), 'recording.wav');
       }
     } else {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
         final path =
-            '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        await _audioRecorder.start(const RecordConfig(), path: path);
+            '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+        const config = RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+          bitRate: 256000,
+        );
+        await _audioRecorder.start(config, path: path);
         setState(() => _recording = true);
       } else {
         setState(() => _error = 'Chưa được cấp quyền ghi âm (microphone).');

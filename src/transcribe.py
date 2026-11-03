@@ -76,9 +76,11 @@ def transcribe_file(
     segments_iter, info = model.transcribe(
         str(audio_path),
         language=language,
-        beam_size=5,
+        beam_size=10,
+        best_of=5,
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
+        initial_prompt="Đây là bản ghi âm cuộc họp bằng tiếng Việt.",
     )
 
     segments: list = []

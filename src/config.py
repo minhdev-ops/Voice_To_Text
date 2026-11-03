@@ -28,7 +28,7 @@ def get(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 
 
-WHISPER_MODEL = get("WHISPER_MODEL", "base")
+WHISPER_MODEL = get("WHISPER_MODEL", "large-v3")
 DEFAULT_LANGUAGE = get("DEFAULT_LANGUAGE", "") or None
 SUMMARY_API_KEY = get("SUMMARY_API_KEY", "")
 SUMMARY_BASE_URL = get("SUMMARY_BASE_URL", "https://api.openai.com/v1")
