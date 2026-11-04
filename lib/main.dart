@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
 import 'data/recording.dart';
 import 'data/recording_repository.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/import_screen.dart';
 import 'screens/recording_screen.dart';
 import 'screens/result_screen.dart';
@@ -37,6 +39,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  bool _showOnboarding = false;
   String _baseUrl = 'http://127.0.0.1:8000';
   ApiService get _api => ApiService(_baseUrl);
   final _audioRecorder = AudioRecorder();
@@ -49,7 +52,24 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    _checkOnboarding();
     _loadRecordings();
+  }
+
+  Future<void> _checkOnboarding() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seen = prefs.getBool('onboarding_seen') ?? false;
+      if (!seen && mounted) setState(() => _showOnboarding = true);
+    } catch (_) {}
+  }
+
+  Future<void> _finishOnboarding() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('onboarding_seen', true);
+    } catch (_) {}
+    if (mounted) setState(() => _showOnboarding = false);
   }
 
   Future<void> _loadRecordings() async {
@@ -165,6 +185,9 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showOnboarding) {
+      return OnboardingScreen(onDone: _finishOnboarding);
+    }
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
