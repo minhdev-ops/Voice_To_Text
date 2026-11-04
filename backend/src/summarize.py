@@ -129,12 +129,12 @@ def summarize_transcript(transcript: str, language: str | None = None) -> dict:
 
 _ACTION_RE = re.compile(
     r"\b(can|can phai|se|phai|phu trach|chiu trach nhiem|co trach nhiem|"
-    r"hoan thanh|thuc hien|trien khai|phan cong|giao cho|hen|dang ky|"
-    r"kiem tra lai|chuan bi bao cao)\b",
+    r"hoan thanh|thuc hien|trien khai|phan cong|giao cho|giao viec|hen|dang ky|"
+    r"kiem tra lai|chuan bi bao cao|de xuat|yeu cau)\b",
     re.IGNORECASE,
 )
 _DECISION_RE = re.compile(
-    r"\b(quyet dinh|thong nhat|dong y|chot|thong qua|nhat tri|phe duyet|ket luan)\b",
+    r"\b(quyet dinh|thong nhat|dong y|thong qua|nhat tri|phe duyet|ket luan|duyet)\b",
     re.IGNORECASE,
 )
 _QUESTION_RE = re.compile(r"\?|khong ro|chua ro|bo ngo|de ngo|chua quyet dinh", re.IGNORECASE)
@@ -198,8 +198,8 @@ def summarize_with_rules(transcript: str) -> dict:
         "action_items": action_items[:30],
         "open_questions": _dedupe(open_questions)[:20],
         "mind_map": _build_mind_map(transcript),
-        "flashcards": [],
-        "quiz": [],
+        "flashcards": _build_flashcards(transcript, sentences, _extract_topics(transcript)),
+        "quiz": _build_quiz(transcript, sentences, action_items),
         "slides": _build_slides(transcript, sentences),
         "method": "rule",
     }
@@ -349,11 +349,17 @@ def _extract_topics(text: str, top_n: int = 6) -> list:
 
 
 def _build_mind_map(transcript: str) -> dict:
-    """Xay dung som do tu don gian tu cac chu de chinh."""
+    """Xay dung som do tu cac chu de chinh, moi nhanh co cac y chinh lien quan."""
+    sentences = _split_sentences(transcript)
     topics = _extract_topics(transcript, top_n=5)
     branches = []
     for t in topics:
-        branches.append({"label": t, "children": []})
+        t_norm = _remove_diacritics(t).lower()
+        related = [
+            s for s in sentences
+            if t_norm in _remove_diacritics(s).lower() and len(s) > 12
+        ][:3]
+        branches.append({"label": t, "children": related})
     return {"root": "Cuoc hop", "branches": branches}
 
 
@@ -368,6 +374,49 @@ def _build_slides(transcript: str, sentences: list) -> list:
         bullets = related[:3] if related else sentences[:2]
         slides.append({"title": t, "bullets": bullets})
     return slides[:8]
+
+
+    return slides[:8]
+
+
+def _build_flashcards(transcript, sentences, topics):
+    cards = []
+    for t in topics[:4]:
+        t_norm = _remove_diacritics(t).lower()
+        related = [s for s in sentences if t_norm in _remove_diacritics(s).lower() and len(s) > 15]
+        if related:
+            cards.append({"q": t.capitalize() + " la gi?", "a": related[0]})
+    questions = [s for s in sentences if "?" in s or _QUESTION_RE.search(_remove_diacritics(s))]
+    for q in questions[:3]:
+        cards.append({"q": q, "a": "Can lam ro trong cuoc hop tiep theo."})
+    return cards[:8]
+
+
+def _build_quiz(transcript, sentences, action_items):
+    import random
+    owners = []
+    for a in action_items:
+        ow = a.get("owner") if isinstance(a, dict) else None
+        if ow:
+            owners.append(ow)
+    owners = list(dict.fromkeys(owners))
+    quiz = []
+    for a in action_items[:5]:
+        if not isinstance(a, dict) or not a.get("owner"):
+            continue
+        task = (a.get("task") or "")[:55]
+        opts = [a["owner"]] + [o for o in owners if o != a["owner"]][:3]
+        if len(opts) < 2:
+            continue
+        random.shuffle(opts)
+        quiz.append({"q": "Ai phu trach: " + task + "...?", "options": opts, "answer": opts.index(a["owner"])})
+    return quiz
+
+
+
+
+
+def _normalize(data: dict) -> dict:
     action_items = []
     for it in data.get("action_items", []) or []:
         if isinstance(it, str):
