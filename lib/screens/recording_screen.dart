@@ -29,7 +29,8 @@ class RecordingScreen extends StatefulWidget {
   State<RecordingScreen> createState() => _RecordingScreenState();
 }
 
-class _RecordingScreenState extends State<RecordingScreen> {
+class _RecordingScreenState extends State<RecordingScreen>
+    with SingleTickerProviderStateMixin {
   bool _recording = false;
   bool _paused = false;
   bool _processing = false;
@@ -38,12 +39,24 @@ class _RecordingScreenState extends State<RecordingScreen> {
   String? _error;
   String? _path;
   StreamSubscription<Amplitude>? _ampSub;
-  double _amp = -60; // dBFS
+  double _amp = -60;
+
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+  }
 
   @override
   void dispose() {
     _timer?.cancel();
     _ampSub?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -60,15 +73,18 @@ class _RecordingScreenState extends State<RecordingScreen> {
     if (_recording && !_paused) {
       _timer?.cancel();
       setState(() => _paused = true);
+      _pulseController.stop();
       await widget.audioRecorder.pause();
     } else if (_paused) {
       await widget.audioRecorder.resume();
       setState(() => _paused = false);
       _startTimer();
+      _pulseController.repeat();
     } else {
       if (await widget.audioRecorder.hasPermission()) {
         final dir = await getTemporaryDirectory();
-        _path = '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+        _path =
+            '${dir.path}/rec_${DateTime.now().millisecondsSinceEpoch}.wav';
         const config = RecordConfig(
           encoder: AudioEncoder.wav,
           sampleRate: 16000,
@@ -79,6 +95,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
         setState(() => _recording = true);
         _startTimer();
         _listenAmplitude();
+        _pulseController.repeat();
       } else {
         setState(() => _error = 'Chưa được cấp quyền ghi âm (microphone).');
       }
@@ -94,6 +111,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
   Future<void> _stopAndProcess() async {
     _timer?.cancel();
     _ampSub?.cancel();
+    _pulseController.stop();
     final path = await widget.audioRecorder.stop();
     setState(() {
       _recording = false;
@@ -110,7 +128,6 @@ class _RecordingScreenState extends State<RecordingScreen> {
     }
 
     try {
-      // Luu file am thanh vao vung luu tru cua app de con nghe lai duoc.
       final docs = await getApplicationDocumentsDirectory();
       final audioDir = Directory(p.join(docs.path, 'recordings'));
       if (!audioDir.existsSync()) audioDir.createSync(recursive: true);
@@ -183,7 +200,36 @@ class _RecordingScreenState extends State<RecordingScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Timer
+          if (_recording)
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (_, child) {
+                final scale = 1.0 + 0.1 * _pulseController.value;
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.red.withValues(alpha: 0.1),
+                  border: Border.all(color: Colors.red, width: 2),
+                ),
+                child: const Icon(Icons.mic, color: Colors.red, size: 36),
+              ),
+            )
+          else
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: theme.colorScheme.primaryContainer,
+              ),
+              child: Icon(Icons.mic,
+                  color: theme.colorScheme.onPrimaryContainer, size: 36),
+            ),
+          const SizedBox(height: 24),
           Text(
             _formatDuration(_elapsed),
             style: theme.textTheme.displayMedium?.copyWith(
@@ -192,18 +238,16 @@ class _RecordingScreenState extends State<RecordingScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          // Status text
           Text(
             _recording
                 ? (_paused ? 'Đã tạm dừng' : 'Đang ghi âm...')
                 : 'Sẵn sàng ghi âm',
             style: theme.textTheme.bodyLarge?.copyWith(
-              color: _recording ? Colors.red : Colors.grey,
+              color: _recording ? Colors.red : theme.colorScheme.outline,
             ),
           ),
           const SizedBox(height: 8),
           if (_recording)
-            // Recording indicator
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -219,7 +263,7 @@ class _RecordingScreenState extends State<RecordingScreen> {
                 if (isRecording) const SizedBox(width: 8),
                 Text(
                   isRecording ? 'REC' : 'PAUSED',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.red,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2,
@@ -244,7 +288,6 @@ class _RecordingScreenState extends State<RecordingScreen> {
             ),
           ],
           const SizedBox(height: 48),
-          // Controls
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -254,8 +297,9 @@ class _RecordingScreenState extends State<RecordingScreen> {
                   icon: Icon(_paused ? Icons.play_arrow : Icons.pause),
                   iconSize: 32,
                   tooltip: _paused ? 'Tiếp tục' : 'Tạm dừng',
-                ),
-              // Main button
+                )
+              else
+                const SizedBox(width: 48),
               GestureDetector(
                 onTap: _recording ? _stopAndProcess : _toggleRecord,
                 child: Container(
@@ -264,6 +308,14 @@ class _RecordingScreenState extends State<RecordingScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _recording ? Colors.red : theme.colorScheme.primary,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (_recording ? Colors.red : theme.colorScheme.primary)
+                            .withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
                   child: Icon(
                     _recording ? Icons.stop : Icons.mic,
@@ -272,7 +324,6 @@ class _RecordingScreenState extends State<RecordingScreen> {
                   ),
                 ),
               ),
-              // Spacer to balance layout
               const SizedBox(width: 48),
             ],
           ),
@@ -280,14 +331,16 @@ class _RecordingScreenState extends State<RecordingScreen> {
           if (!_recording)
             Text(
               'Nhấn nút micro để bắt đầu ghi âm',
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.outline),
             ),
           if (_recording)
             Text(
               _paused
                   ? 'Nhấn play để tiếp tục, hoặc nút đỏ để kết thúc'
                   : 'Nhấn nút đỏ để kết thúc và chuyển thành văn bản',
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.outline),
               textAlign: TextAlign.center,
             ),
         ],
@@ -295,7 +348,6 @@ class _RecordingScreenState extends State<RecordingScreen> {
     );
   }
 
-  /// Chi bao muc am luong (dBFS -> 24 vach), cap nhat 10 lan/giay.
   Widget _amplitudeMeter() {
     const bars = 24;
     final normalized = ((_amp + 60) / 60).clamp(0.0, 1.0);

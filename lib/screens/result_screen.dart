@@ -9,10 +9,7 @@ import '../api_service.dart';
 import '../data/recording.dart';
 
 class ResultScreen extends StatefulWidget {
-  /// Xem lai mot ban ghi da luu.
   final Recording? recording;
-
-  /// Hoac nhan dang mot tep moi.
   final ApiService? api;
   final List<int>? bytes;
   final String? filename;
@@ -59,7 +56,7 @@ class _ResultScreenState extends State<ResultScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _rec = widget.recording;
     if (_rec == null) {
       _load();
@@ -143,6 +140,67 @@ class _ResultScreenState extends State<ResultScreen>
     super.dispose();
   }
 
+  void _copyAll() {
+    final rec = _rec;
+    if (rec == null) return;
+    final buf = StringBuffer();
+    buf.writeln('# $rec.title');
+    buf.writeln();
+    buf.writeln('## Bản chép lời');
+    buf.writeln(rec.transcript);
+    buf.writeln();
+    final s = rec.summary;
+    if (s.isNotEmpty) {
+      buf.writeln('## Tóm tắt');
+      if (s['summary'] != null) {
+        buf.writeln();
+        buf.writeln(s['summary'].toString());
+      }
+      final topics = s['topics'] as List?;
+      if (topics != null && topics.isNotEmpty) {
+        buf.writeln();
+        buf.writeln('### Chủ đề');
+        for (final t in topics) {
+          buf.writeln('- ${t.toString()}');
+        }
+      }
+      final decisions = s['decisions'] as List?;
+      if (decisions != null && decisions.isNotEmpty) {
+        buf.writeln();
+        buf.writeln('### Quyết định');
+        for (final d in decisions) {
+          buf.writeln('- ${d.toString()}');
+        }
+      }
+      final actions = s['action_items'] as List?;
+      if (actions != null && actions.isNotEmpty) {
+        buf.writeln();
+        buf.writeln('### Việc cần làm');
+        for (final a in actions) {
+          if (a is Map) {
+            buf.writeln('- ${(a['task'] ?? '').toString()}');
+            if (a['owner'] != null) buf.writeln('  Phụ trách: ${a['owner'].toString()}');
+            if (a['due'] != null) buf.writeln('  Hạn: ${a['due'].toString()}');
+          } else {
+            buf.writeln('- ${a.toString()}');
+          }
+        }
+      }
+      final questions = s['open_questions'] as List?;
+      if (questions != null && questions.isNotEmpty) {
+        buf.writeln();
+        buf.writeln('### Câu hỏi');
+        for (final q in questions) {
+          buf.writeln('- ${q.toString()}');
+        }
+      }
+    }
+    Clipboard.setData(ClipboardData(text: buf.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Đã sao chép toàn bộ nội dung')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rec = _rec;
@@ -157,13 +215,14 @@ class _ResultScreenState extends State<ResultScreen>
           if (rec != null)
             IconButton(
               icon: const Icon(Icons.copy_all),
-              tooltip: 'Sao chép bản chép lời',
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: rec.transcript));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã sao chép bản chép lời')),
-                );
-              },
+              tooltip: 'Sao chép',
+              onPressed: _copyAll,
+            ),
+          if (rec != null)
+            IconButton(
+              icon: const Icon(Icons.share),
+              tooltip: 'Chia sẻ',
+              onPressed: _copyAll,
             ),
         ],
         bottom: rec != null
@@ -172,6 +231,7 @@ class _ResultScreenState extends State<ResultScreen>
                 tabs: const [
                   Tab(icon: Icon(Icons.text_snippet), text: 'Chép lời'),
                   Tab(icon: Icon(Icons.summarize), text: 'Tóm tắt'),
+                  Tab(icon: Icon(Icons.account_tree), text: 'Sơ đồ'),
                 ],
               )
             : null,
@@ -191,6 +251,7 @@ class _ResultScreenState extends State<ResultScreen>
                             children: [
                               _transcriptTab(rec),
                               _summaryTab(rec),
+                              _mindMapTab(rec),
                             ],
                           ),
                         ),
@@ -300,7 +361,7 @@ class _ResultScreenState extends State<ResultScreen>
               ],
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                child: Text('$_speed×'),
+                child: Text('${_speed.toString()}×'),
               ),
             ),
           ],
@@ -385,8 +446,20 @@ class _ResultScreenState extends State<ResultScreen>
         actions.isEmpty &&
         questions.isEmpty) {
       return Center(
-        child: Text('Chưa có tóm tắt cho bản ghi này',
-            style: TextStyle(color: theme.colorScheme.outline)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.summarize, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Chưa có tóm tắt', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Tóm tắt sẽ được tạo tự động sau khi nhận dạng.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
       );
     }
 
@@ -395,7 +468,7 @@ class _ResultScreenState extends State<ResultScreen>
       children: [
         if (summaryText.isNotEmpty)
           _section(theme, 'Tóm tắt chung', Icons.description,
-              [Text(summaryText)]),
+              [SelectableText(summaryText)]),
         if (topics.isNotEmpty)
           _section(theme, 'Chủ đề chính', Icons.topic, [
             Wrap(
@@ -422,7 +495,7 @@ class _ResultScreenState extends State<ResultScreen>
         if (actions.isNotEmpty)
           _section(theme, 'Việc cần làm', Icons.task_alt, [
             ...actions.map((a) {
-              final m = a as Map;
+              final m = a is Map ? a : {'task': a.toString()};
               final owner = m['owner'];
               final due = m['due'];
               return ListTile(
@@ -430,8 +503,8 @@ class _ResultScreenState extends State<ResultScreen>
                 title: Text((m['task'] ?? '').toString()),
                 subtitle: owner != null || due != null
                     ? Text([
-                        if (owner != null) 'Phụ trách: $owner',
-                        if (due != null) 'Hạn: $due',
+                        if (owner != null) 'Phụ trách: ${owner.toString()}',
+                        if (due != null) 'Hạn: ${due.toString()}',
                       ].join(' · '))
                     : null,
                 contentPadding: EdgeInsets.zero,
@@ -448,6 +521,114 @@ class _ResultScreenState extends State<ResultScreen>
                   dense: true,
                 )),
           ]),
+      ],
+    );
+  }
+
+  Widget _mindMapTab(Recording rec) {
+    final theme = Theme.of(context);
+    final s = rec.summary;
+    final mindMap = s['mind_map'] as Map?;
+    final flashcards = (s['flashcards'] as List?) ?? [];
+
+    if (mindMap == null || mindMap.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.account_tree, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Chưa có sơ đồ tư duy', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Sơ đồ tư duy sẽ được tạo khi có tóm tắt từ LLM.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final root = (mindMap['root'] ?? 'Cuộc họp').toString();
+    final branches = (mindMap['branches'] as List?) ?? [];
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Mind map root
+        Center(
+          child: Card(
+            color: theme.colorScheme.primaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: Text(
+                root,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Branches
+        ...branches.map((b) {
+          final branch = b as Map;
+          final label = (branch['label'] ?? '').toString();
+          final children = (branch['children'] as List?) ?? [];
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ExpansionTile(
+              leading: CircleAvatar(
+                backgroundColor: theme.colorScheme.secondaryContainer,
+                child: Icon(Icons.topic,
+                    color: theme.colorScheme.onSecondaryContainer, size: 20),
+              ),
+              title: Text(label, style: theme.textTheme.titleSmall),
+              children: children.map((c) {
+                return ListTile(
+                  leading: const Icon(Icons.subdirectory_arrow_right, size: 16),
+                  title: Text(c.toString()),
+                  dense: true,
+                  contentPadding: const EdgeInsets.only(left: 32, right: 16),
+                );
+              }).toList(),
+            ),
+          );
+        }),
+        // Flashcards section
+        if (flashcards.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          _section(theme, 'Thẻ ghi nhớ', Icons.style, [
+            ...flashcards.map((f) {
+              final card = f as Map;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ExpansionTile(
+                  leading: CircleAvatar(
+                    backgroundColor: theme.colorScheme.tertiaryContainer,
+                    child: Icon(Icons.quiz,
+                        color: theme.colorScheme.onTertiaryContainer, size: 20),
+                  ),
+                  title: Text((card['q'] ?? '').toString(),
+                      style: theme.textTheme.bodyMedium),
+                  children: [
+                    ListTile(
+                      title: Text((card['a'] ?? '').toString(),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.primary,
+                          )),
+                      contentPadding: const EdgeInsets.only(left: 32, right: 16),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ]),
+        ],
       ],
     );
   }

@@ -22,7 +22,7 @@ from src.config import DEFAULT_LANGUAGE, WHISPER_MODEL, llm_configured
 from src.core import process_audio, process_text
 from src.transcribe import list_models
 
-app = FastAPI(title="Voice To Text API", version="1.0.0")
+app = FastAPI(title="NoteX API", version="1.0.0")
 
 # Cho phep Flutter (web/android) goi tu may khac trong luc phat trien.
 app.add_middleware(

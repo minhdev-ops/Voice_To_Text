@@ -11,23 +11,25 @@ import 'screens/result_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
 
-void main() => runApp(const VietVoiceApp());
+void main() => runApp(const NoteXApp());
 
-class VietVoiceApp extends StatelessWidget {
-  const VietVoiceApp({super.key});
+class NoteXApp extends StatelessWidget {
+  const NoteXApp({super.key});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'VietVoice',
+        title: 'NoteX',
         theme: ThemeData(
           useMaterial3: true,
-          colorSchemeSeed: Colors.indigo,
+          colorSchemeSeed: const Color(0xFF6750A4),
           brightness: Brightness.light,
+          appBarTheme: const AppBarTheme(centerTitle: false),
         ),
         darkTheme: ThemeData(
           useMaterial3: true,
-          colorSchemeSeed: Colors.indigo,
+          colorSchemeSeed: const Color(0xFF6750A4),
           brightness: Brightness.dark,
+          appBarTheme: const AppBarTheme(centerTitle: false),
         ),
         themeMode: ThemeMode.system,
         home: const MainShell(),
@@ -68,7 +70,6 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  /// Luu ket qua nhan dang xuong SQLite (ben vung qua cac lan mo app).
   Future<Recording?> _saveResult(Map<String, dynamic> result) async {
     final t = (result['transcript'] as Map?) ?? const {};
     final text = (t['text'] ?? '').toString();

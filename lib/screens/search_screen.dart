@@ -28,130 +28,194 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  /// Tim khong dau: go "hop" van tim duoc "họp".
-  static String _fold(String s) {
-    const map = {
-      'a': 'àáảãạăằắẳẵặâầấẩẫậ',
-      'e': 'èéẻẽẹêềếểễệ',
-      'i': 'ìíỉĩị',
-      'o': 'òóỏõọôồốổỗộơờớởỡợ',
-      'u': 'ùúủũụưừứửữự',
-      'y': 'ỳýỷỹỵ',
-      'd': 'đ',
-    };
-    var out = s.toLowerCase();
-    map.forEach((plain, accented) {
-      for (final ch in accented.split('')) {
-        out = out.replaceAll(ch, plain);
-      }
-    });
-    return out;
-  }
-
-  List<Recording> get _results {
-    final q = _fold(_query.trim());
+  List<Recording> get _filtered {
+    final q = _query.toLowerCase().trim();
     if (q.isEmpty) return widget.recordings;
     return widget.recordings.where((r) {
-      return _fold(r.title).contains(q) || _fold(r.transcript).contains(q);
+      return r.title.toLowerCase().contains(q) ||
+          r.transcript.toLowerCase().contains(q);
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final results = _results;
+    final results = _filtered;
     return Scaffold(
-      appBar: AppBar(title: const Text('Tìm kiếm')),
+      appBar: AppBar(
+        title: const Text('Tìm kiếm'),
+        automaticallyImplyLeading: false,
+      ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: TextField(
+            child: SearchBar(
               controller: _controller,
-              decoration: InputDecoration(
-                hintText: 'Tìm theo tên hoặc nội dung (không cần dấu)...',
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _controller.clear();
-                          setState(() => _query = '');
-                        },
-                      )
-                    : null,
-              ),
+              hintText: 'Tìm trong bản ghi...',
+              leading: const Icon(Icons.search),
+              trailing: [
+                if (_query.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _controller.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+              ],
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
-          if (widget.recordings.isEmpty)
-            _hint(theme, Icons.mic_none, 'Chưa có bản ghi để tìm')
-          else if (results.isEmpty)
-            _hint(theme, Icons.search_off, 'Không tìm thấy kết quả cho “$_query”')
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                itemCount: results.length,
-                itemBuilder: (context, i) {
-                  final r = results[i];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      title: Text(
-                        r.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall,
-                      ),
-                      subtitle: Text(
-                        _snippet(r.transcript, _query),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      isThreeLine: false,
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => widget.onOpenResult(r),
-                      onLongPress: () => _confirmDelete(context, r),
-                    ),
-                  );
-                },
+          if (_query.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${results.length} kết quả',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                ),
               ),
             ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: results.isEmpty
+                ? _emptyState(theme)
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    itemCount: results.length,
+                    itemBuilder: (context, index) {
+                      final r = results[index];
+                      return _recordingTile(context, r, theme);
+                    },
+                  ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _hint(ThemeData theme, IconData icon, String text) => Expanded(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 56, color: theme.colorScheme.outlineVariant),
-              const SizedBox(height: 12),
-              Text(text, style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.outline,
-              )),
-            ],
-          ),
+  Widget _emptyState(ThemeData theme) {
+    if (_query.isNotEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Không tìm thấy kết quả',
+                style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Thử từ khóa khác hoặc kiểm tra chính tả.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
         ),
       );
+    }
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search, size: 64, color: theme.colorScheme.outlineVariant),
+          const SizedBox(height: 16),
+          Text('Tìm kiếm bản ghi', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Text(
+            'Nhập từ khóa để tìm trong tiêu đề và nội dung.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.outline),
+          ),
+        ],
+      ),
+    );
+  }
 
-  String _snippet(String text, String query) {
-    final flat = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    if (query.trim().isEmpty) {
-      return flat.length > 90 ? '${flat.substring(0, 90)}...' : flat;
-    }
-    final idx = _fold(flat).indexOf(_fold(query.trim()));
-    if (idx < 0) {
-      return flat.length > 90 ? '${flat.substring(0, 90)}...' : flat;
-    }
-    final start = (idx - 30).clamp(0, flat.length);
-    final end = (idx + query.length + 40).clamp(0, flat.length);
-    return '${start > 0 ? '...' : ''}${flat.substring(start, end)}'
-        '${end < flat.length ? '...' : ''}';
+  Widget _recordingTile(BuildContext context, Recording r, ThemeData theme) {
+    final preview = r.transcript.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.primaryContainer,
+          child: Icon(Icons.graphic_eq,
+              color: theme.colorScheme.onPrimaryContainer, size: 20),
+        ),
+        title: _highlight(r.title, theme),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (preview.isNotEmpty)
+              Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Text(
+              _meta(r),
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
+        isThreeLine: preview.isNotEmpty,
+        onTap: () => widget.onOpenResult(r),
+        onLongPress: () => _showActions(context, r),
+      ),
+    );
+  }
+
+  Widget _highlight(String text, ThemeData theme) {
+    final q = _query.toLowerCase().trim();
+    if (q.isEmpty) return Text(text, style: theme.textTheme.titleSmall);
+    final idx = text.toLowerCase().indexOf(q);
+    if (idx < 0) return Text(text, style: theme.textTheme.titleSmall);
+    return RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: theme.textTheme.titleSmall,
+        children: [
+          TextSpan(text: text.substring(0, idx)),
+          TextSpan(
+            text: text.substring(idx, idx + q.length),
+            style: TextStyle(
+              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.2),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          TextSpan(text: text.substring(idx + q.length)),
+        ],
+      ),
+    );
+  }
+
+  String _meta(Recording r) {
+    final d = r.createdAt;
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  void _showActions(BuildContext context, Recording r) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Xóa bản ghi',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmDelete(context, r);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, Recording r) {
@@ -159,9 +223,10 @@ class _SearchScreenState extends State<SearchScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Xóa bản ghi?'),
-        content: Text('“${r.title}” sẽ bị xóa vĩnh viễn.'),
+        content: Text('"undefined" sẽ bị xóa vĩnh viễn, không thể khôi phục.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
