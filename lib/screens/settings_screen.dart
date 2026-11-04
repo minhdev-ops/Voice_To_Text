@@ -141,7 +141,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Cài đặt')),
+      appBar: AppBar(
+        title: const Text('Cài đặt'),
+        automaticallyImplyLeading: false,
+      ),
       body: ListView(
         children: [
           _serverSection(theme),
@@ -220,6 +223,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               items: const [
                 DropdownMenuItem(value: 'vi', child: Text('Tiếng Việt')),
                 DropdownMenuItem(value: 'en', child: Text('English')),
+                DropdownMenuItem(value: 'zh', child: Text('中文')),
+                DropdownMenuItem(value: 'ja', child: Text('日本語')),
+                DropdownMenuItem(value: 'ko', child: Text('한국어')),
+                DropdownMenuItem(value: 'fr', child: Text('Français')),
+                DropdownMenuItem(value: 'de', child: Text('Deutsch')),
+                DropdownMenuItem(value: 'es', child: Text('Español')),
                 DropdownMenuItem(value: '', child: Text('Tự nhận')),
               ],
               onChanged: (v) {
@@ -293,7 +302,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         [
           const ListTile(
             leading: Icon(Icons.apps),
-            title: Text('VietVoice'),
+            title: Text('NoteX'),
             subtitle: Text('Phiên bản 1.0.0'),
           ),
           ListTile(
@@ -395,7 +404,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Chính sách quyền riêng tư'),
         content: const SingleChildScrollView(
           child: Text(
-            'VietVoice là ứng dụng offline-first.\n\n'
+            'NoteX là ứng dụng offline-first.\n\n'
             '· Bản ghi âm và văn bản được lưu trên thiết bị.\n'
             '· Nhận dạng giọng nói chạy cục bộ, không gửi âm thanh lên máy chủ.\n'
             '· Tính năng AI Summary tùy chọn có thể gọi API trực tuyến nếu được cấu hình.\n'

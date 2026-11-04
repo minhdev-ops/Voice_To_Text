@@ -1,4 +1,4 @@
-# Voice_To_Text
+# NoteX - Ghi chú & Họp AI
 
 Ghi am cuoc hop -> **chep loi (speech-to-text)** -> **tom tat co cau truc**
 (chu de, quyet dinh, viec can lam, van de bo ngo).

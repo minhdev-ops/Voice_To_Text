@@ -162,7 +162,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
                                   label: const Text('Đã cài'),
                                   visualDensity: VisualDensity.compact,
                                   backgroundColor:
-                                      Colors.green.withOpacity(0.15),
+                                      Colors.green.withValues(alpha: 0.15),
                                 ),
                               if (isDefault)
                                 const Padding(
@@ -254,6 +254,6 @@ class _ModelsScreenState extends State<ModelsScreen> {
 
   String _fmtMb(int disk, int catalogMb) {
     if (disk > 0) return _mb(disk);
-    return '${catalogMb} MB (dự kiến)';
+    return '$catalogMb MB (dự kiến)';
   }
 }

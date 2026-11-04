@@ -131,7 +131,7 @@ class _SpeakersScreenState extends State<SpeakersScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Gộp vào người nói khác'),
         content: DropdownButtonFormField<String>(
-          value: target,
+          initialValue: target,
           items: targets
               .map((t) => DropdownMenuItem(
                     value: t,
@@ -170,7 +170,7 @@ class _SpeakersScreenState extends State<SpeakersScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Gán người nói'),
         content: DropdownButtonFormField<String?>(
-          value: chosen,
+          initialValue: chosen,
           items: [
             const DropdownMenuItem(value: null, child: Text('(chưa rõ)')),
             ...ids.map((t) => DropdownMenuItem(
@@ -333,7 +333,7 @@ class _SpeakersScreenState extends State<SpeakersScreen> {
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                           backgroundColor:
-                              _colorFor(spk).withOpacity(0.15),
+                              _colorFor(spk).withValues(alpha: 0.15),
                         ),
                       )
                     else

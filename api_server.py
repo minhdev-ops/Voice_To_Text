@@ -24,7 +24,7 @@ from src.core import process_audio, process_text
 from src.summarize import configure_llm, llm_status, summarize_transcript
 from src.transcribe import list_models
 
-app = FastAPI(title="Voice To Text API", version="1.0.0")
+app = FastAPI(title="NoteX API", version="1.0.0")
 
 # Cho phep Flutter (web/android) goi tu may khac trong luc phat trien.
 app.add_middleware(

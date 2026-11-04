@@ -69,7 +69,9 @@ USER_PROMPT_TEMPLATE = """Hay phan tich ban ghi cuoc hop sau va tra ve JSON voi 
   "action_items": [
     {"task": "viec can lam", "owner": "nguoi phu trach (hoac null)", "due": "thoi han (hoac null)"}
   ],
-  "open_questions": ["cau hoi/con bo ngo (hoac [])"]
+  "open_questions": ["cau hoi/con bo ngo (hoac [])"],
+  "mind_map": {"root": "ten cuoc hop", "branches": [{"label": "chu de 1", "children": ["y kien 1", "y kien 2"]}]},
+  "flashcards": [{"q": "cau hoi", "a": "dap an"}]
 }
 
 Ban ghi cuoc hop:
@@ -158,6 +160,8 @@ def _empty_summary() -> dict:
         "decisions": [],
         "action_items": [],
         "open_questions": [],
+        "mind_map": {},
+        "flashcards": [],
         "method": "rule",
     }
 
@@ -189,6 +193,8 @@ def summarize_with_rules(transcript: str) -> dict:
         "decisions": _dedupe(decisions)[:20],
         "action_items": action_items[:30],
         "open_questions": _dedupe(open_questions)[:20],
+        "mind_map": _build_mind_map(transcript),
+        "flashcards": [],
         "method": "rule",
     }
 
@@ -336,6 +342,15 @@ def _extract_topics(text: str, top_n: int = 6) -> list:
     return out
 
 
+def _build_mind_map(transcript: str) -> dict:
+    """Xay dung som do tu don gian tu cac chu de chinh."""
+    topics = _extract_topics(transcript, top_n=5)
+    branches = []
+    for t in topics:
+        branches.append({"label": t, "children": []})
+    return {"root": "Cuoc hop", "branches": branches}
+
+
 def _normalize(data: dict) -> dict:
     action_items = []
     for it in data.get("action_items", []) or []:
@@ -353,6 +368,8 @@ def _normalize(data: dict) -> dict:
         "decisions": [str(d) for d in (data.get("decisions") or [])],
         "action_items": action_items,
         "open_questions": [str(q) for q in (data.get("open_questions") or [])],
+        "mind_map": data.get("mind_map") or {},
+        "flashcards": data.get("flashcards") or [],
         "method": "llm",
     }
 

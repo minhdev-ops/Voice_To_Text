@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Bo nhan dien hinh anh cho VietVoice: tim an tuong, the phang, chu ro rang.
+/// Bo nhan dien hinh anh cho NoteX: tim an tuong, the phang, chu ro rang.
 class AppTheme {
   static const seed = Color(0xFF5B5BD6);
   static const _lightBg = Color(0xFFF7F7FB);

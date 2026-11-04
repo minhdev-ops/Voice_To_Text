@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VietVoice'),
+        title: const Text('NoteX'),
         actions: [
           IconButton(
             icon: const Icon(Icons.upload_file),
@@ -408,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Xóa bản ghi?'),
-        content: Text('“${r.title}” sẽ bị xóa vĩnh viễn, không thể khôi phục.'),
+        content: Text('"${r.title}" sẽ bị xóa vĩnh viễn, không thể khôi phục.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
           FilledButton(

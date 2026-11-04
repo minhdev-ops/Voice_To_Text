@@ -85,7 +85,7 @@ class Exporter {
       }
     }
     b.writeln();
-    b.writeln('_Tao boi VietVoice_');
+    b.writeln('_Tao boi NoteX_');
     return b.toString();
   }
 
@@ -108,7 +108,7 @@ class Exporter {
         header: (ctx) => pw.Container(
           alignment: pw.Alignment.centerRight,
           margin: const pw.EdgeInsets.only(bottom: 8),
-          child: pw.Text('VietVoice',
+          child: pw.Text('NoteX',
               style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
         ),
         footer: (ctx) => pw.Container(

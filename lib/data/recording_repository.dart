@@ -14,7 +14,7 @@ class RecordingRepository {
     if (_db != null) return _db!;
     final dir = await getDatabasesPath();
     _db = await openDatabase(
-      p.join(dir, 'vietvoice.db'),
+      p.join(dir, 'notex.db'),
       version: 3,
       onCreate: (db, version) async {
         await _createTable(db);
