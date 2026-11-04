@@ -10,6 +10,7 @@ import 'screens/recording_screen.dart';
 import 'screens/result_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_screen.dart';
+import 'theme.dart';
 
 void main() => runApp(const VietVoiceApp());
 
@@ -19,16 +20,8 @@ class VietVoiceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'VietVoice',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.indigo,
-          brightness: Brightness.light,
-        ),
-        darkTheme: ThemeData(
-          useMaterial3: true,
-          colorSchemeSeed: Colors.indigo,
-          brightness: Brightness.dark,
-        ),
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         home: const MainShell(),
         debugShowCheckedModeBanner: false,
@@ -147,6 +140,7 @@ class _MainShellState extends State<MainShell> {
       transcript: rec.transcript,
       segments: rec.segments,
       speakers: rec.speakers,
+      translations: rec.translations,
       diarized: rec.diarized,
     );
     await _loadRecordings();

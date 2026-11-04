@@ -112,13 +112,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(height: 20),
             Row(
               children: [
-                Text('Bản ghi', style: theme.textTheme.titleMedium),
-                const SizedBox(width: 8),
+                Text('Bản ghi', style: theme.textTheme.titleLarge),
+                const SizedBox(width: 10),
                 if (widget.recordings.isNotEmpty)
-                  Text(
-                    '(${widget.recordings.length})',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer
+                          .withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${widget.recordings.length}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
                     ),
                   ),
               ],
@@ -140,54 +150,94 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _modelStatusCard(ThemeData theme) {
-    late final Color color;
-    late final String text;
-    late final IconData icon;
+    final Color color;
+    final String text;
+    final IconData icon;
     if (_healthLoading) {
       color = theme.colorScheme.outline;
       text = 'Đang kiểm tra kết nối...';
       icon = Icons.sync;
     } else if (_health == null) {
-      color = Colors.red;
-      text = 'Không kết nối được backend · đang thử lại';
-      icon = Icons.error_outline;
+      color = const Color(0xFFE5484D);
+      text = 'Không kết nối được · đang thử lại';
+      icon = Icons.cloud_off;
     } else {
-      color = Colors.green;
-      text = 'Sẵn sàng · Mô hình: ${_health!['model']}';
-      icon = Icons.check_circle;
+      color = const Color(0xFF2FA96B);
+      text = 'Sẵn sàng · ${_health!['model']}';
+      icon = Icons.bolt;
     }
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: color),
-        title: const Text('Trạng thái máy chủ'),
-        subtitle: Text(text),
-        trailing: IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: 'Kiểm tra lại',
-          onPressed: () {
-            _retryCount = 0;
-            setState(() => _healthLoading = true);
-            _checkHealth();
-          },
-        ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: () {
+              _retryCount = 0;
+              setState(() => _healthLoading = true);
+              _checkHealth();
+            },
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.refresh, size: 18, color: color),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _emptyState(ThemeData theme) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40),
+        padding: const EdgeInsets.symmetric(vertical: 48),
         child: Column(
           children: [
-            Icon(Icons.graphic_eq, size: 64, color: theme.colorScheme.outlineVariant),
-            const SizedBox(height: 16),
-            Text('Chưa có bản ghi nào', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 6),
-            Text(
-              'Nhấn “Ghi âm” hoặc nhập một tệp âm thanh để bắt đầu.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
               ),
+              child: Icon(
+                Icons.multitrack_audio_rounded,
+                size: 44,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Chưa có bản ghi nào', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                'Nhấn Ghi âm để bắt đầu, hoặc nhập một tệp âm thanh có sẵn.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: widget.onRecord,
+              icon: const Icon(Icons.mic),
+              label: const Text('Ghi âm đầu tiên'),
             ),
           ],
         ),
@@ -195,36 +245,89 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _recordingTile(BuildContext context, Recording r, ThemeData theme) {
     final preview = r.transcript.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primaryContainer,
-          child: Icon(Icons.graphic_eq, color: theme.colorScheme.onPrimaryContainer, size: 20),
+    final border = theme.dividerTheme.color ?? theme.colorScheme.outlineVariant;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: theme.cardTheme.color,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: border),
         ),
-        title: Text(
-          r.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleSmall,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (preview.isNotEmpty)
-              Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 4),
-            Text(
-              _meta(r),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
+        child: InkWell(
+          onTap: () => widget.onOpenResult(r),
+          onLongPress: () => _showActions(context, r),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    Icons.graphic_eq,
+                    size: 22,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        r.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      if (preview.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          preview,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.schedule,
+                              size: 13, color: theme.colorScheme.outline),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              _meta(r),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.outline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right,
+                    size: 18, color: theme.colorScheme.outlineVariant),
+              ],
             ),
-          ],
+          ),
         ),
-        isThreeLine: preview.isNotEmpty,
-        onTap: () => widget.onOpenResult(r),
-        onLongPress: () => _showActions(context, r),
       ),
     );
   }

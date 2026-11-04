@@ -267,6 +267,47 @@ class ApiService {
     return null;
   }
 
+  /// Dich danh sach doan sang ngon ngu dich (UI: tab Ban dich).
+  Future<Map<String, dynamic>?> translate(
+    List<String> texts,
+    String target, {
+    String? source,
+  }) async {
+    try {
+      final resp = await http
+          .post(
+            Uri.parse('$baseUrl/api/translate'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'texts': texts, 'target': target, 'source': source}),
+          )
+          .timeout(const Duration(seconds: 180));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Danh sach ngon ngu dich ho tro.
+  Future<List<Map<String, dynamic>>> languages() async {
+    try {
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/languages'))
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final d = jsonDecode(resp.body) as Map<String, dynamic>;
+        return (d['languages'] as List).cast<Map<String, dynamic>>();
+      }
+    } catch (_) {}
+    return const [
+      {'code': 'en', 'name': 'English'},
+      {'code': 'vi', 'name': 'Tiếng Việt'},
+      {'code': 'zh', 'name': '中文'},
+      {'code': 'ja', 'name': '日本語'},
+      {'code': 'ko', 'name': '한국어'},
+    ];
+  }
+
   static (String, String) _mimeFor(String ext) {
     switch (ext) {
       case 'wav':

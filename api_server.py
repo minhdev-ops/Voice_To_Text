@@ -58,6 +58,27 @@ def set_summary_settings(req: LlmSettings):
     return llm_status()
 
 
+class TranslateRequest(BaseModel):
+    texts: list[str]
+    target: str
+    source: str | None = None
+
+
+@app.get("/api/languages")
+def languages():
+    from src.translate import LANGUAGES
+
+    return {"languages": [{"code": k, "name": v} for k, v in LANGUAGES.items()]}
+
+
+@app.post("/api/translate")
+def translate(req: TranslateRequest):
+    """Dich ban chep loi sang ngon ngu khac (LLM neu co, khong thi Google dich)."""
+    from src.translate import translate_auto
+
+    return translate_auto(req.texts, req.target, req.source)
+
+
 class ResummarizeRequest(BaseModel):
     text: str
     language: str | None = None

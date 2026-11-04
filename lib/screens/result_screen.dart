@@ -125,7 +125,7 @@ class _ResultScreenState extends State<ResultScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _rec = widget.recording;
     if (_rec == null) {
       _load();
@@ -385,6 +385,7 @@ class _ResultScreenState extends State<ResultScreen>
                 tabs: const [
                   Tab(icon: Icon(Icons.text_snippet), text: 'Chép lời'),
                   Tab(icon: Icon(Icons.summarize), text: 'Tóm tắt'),
+                  Tab(icon: Icon(Icons.translate), text: 'Bản dịch'),
                 ],
               )
             : null,
@@ -407,6 +408,7 @@ class _ResultScreenState extends State<ResultScreen>
                             children: [
                               _transcriptTab(rec),
                               _summaryTab(rec),
+                              _translateTab(rec),
                             ],
                           ),
                         ),
@@ -491,6 +493,43 @@ class _ResultScreenState extends State<ResultScreen>
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Xuất thất bại: $e')));
     }
+  }
+
+  String _targetLang = 'en';
+  bool _translating = false;
+
+  Future<void> _translate(Recording rec) async {
+    if (widget.api == null) return;
+    final texts = rec.segments.isNotEmpty
+        ? rec.segments
+            .map((s) => ((s as Map)['text'] ?? '').toString())
+            .toList()
+        : <String>[rec.transcript];
+    setState(() => _translating = true);
+    final res = await widget.api!.translate(texts, _targetLang, source: rec.language);
+    if (!mounted) return;
+    setState(() => _translating = false);
+    if (res == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Không dịch được. Kiểm tra kết nối backend.')));
+      return;
+    }
+    final list = ((res['translations'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    if (list.isEmpty) {
+      final err = (res['error'] ??
+              'Không dịch được. Hãy cấu hình AI trong Cài đặt.')
+          .toString();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+    final merged = Map<String, List<String>>.from(rec.translations);
+    merged[_targetLang] = list;
+    final updated = rec.copyWith(translations: merged);
+    setState(() => _rec = updated);
+    await widget.onEdited?.call(updated);
   }
 
   bool _resummarizing = false;
@@ -860,6 +899,131 @@ class _ResultScreenState extends State<ResultScreen>
                   dense: true,
                 )),
           ]),
+      ],
+    );
+  }
+
+  static const _langs = <(String, String)>[
+    ('en', 'English'),
+    ('vi', 'Tiếng Việt'),
+    ('zh', '中文'),
+    ('ja', '日本語'),
+    ('ko', '한국어'),
+    ('fr', 'Français'),
+    ('es', 'Español'),
+    ('th', 'ไทย'),
+  ];
+
+  Widget _translateTab(Recording rec) {
+    final theme = Theme.of(context);
+    final current = rec.translations[_targetLang] ?? const <String>[];
+    final segs = rec.segments;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('lang-$_targetLang'),
+                    initialValue: _targetLang,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Dịch sang',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: _langs
+                        .map((l) => DropdownMenuItem(
+                              value: l.$1,
+                              child: Text(l.$2),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _targetLang = v);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: _translating ? null : () => _translate(rec),
+                  icon: _translating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.translate),
+                  label: Text(_translating
+                      ? 'Đang dịch...'
+                      : (current.isEmpty ? 'Dịch' : 'Dịch lại')),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (current.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Column(
+              children: [
+                Icon(Icons.translate, size: 56, color: theme.colorScheme.outlineVariant),
+                const SizedBox(height: 12),
+                Text(
+                  'Chưa có bản dịch',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Chọn ngôn ngữ rồi nhấn Dịch.\nCần cấu hình AI trong Cài đặt để có chất lượng tốt nhất.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                ),
+              ],
+            ),
+          )
+        else
+          ...List.generate(current.length, (i) {
+            final src = segs.isNotEmpty && i < segs.length
+                ? ((segs[i] as Map)['text'] ?? '').toString()
+                : (i == 0 ? rec.transcript : '');
+            final start = segs.isNotEmpty && i < segs.length
+                ? ((segs[i] as Map)['start'] as num?)?.toDouble() ?? 0
+                : 0.0;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _fmt(Duration(milliseconds: (start * 1000).round())),
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: theme.colorScheme.primary),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      src,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                    const Divider(height: 14),
+                    SelectableText(
+                      current[i],
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
       ],
     );
   }

@@ -12,6 +12,7 @@ class Recording {
   final String transcript;
   final List<dynamic> segments;
   final Map<String, String> speakers;
+  final Map<String, List<String>> translations;
   final bool diarized;
   final Map<String, dynamic> summary;
 
@@ -26,6 +27,7 @@ class Recording {
     required this.transcript,
     this.segments = const [],
     this.speakers = const {},
+    this.translations = const {},
     this.diarized = false,
     required this.summary,
   });
@@ -66,6 +68,7 @@ class Recording {
         transcript: (m['transcript'] ?? '') as String,
         segments: _decodeList(m['segments_json']),
         speakers: _decodeStrMap(m['speakers_json']),
+        translations: _decodeStrListMap(m['translations_json']),
         diarized: (m['diarized'] as int? ?? 0) == 1,
         summary: _decodeMap(m['summary_json']),
       );
@@ -81,6 +84,7 @@ class Recording {
         'transcript': transcript,
         'segments_json': jsonEncode(segments),
         'speakers_json': jsonEncode(speakers),
+        'translations_json': jsonEncode(translations),
         'diarized': diarized ? 1 : 0,
         'summary_json': jsonEncode(summary),
       };
@@ -92,6 +96,7 @@ class Recording {
     String? transcript,
     List<dynamic>? segments,
     Map<String, String>? speakers,
+    Map<String, List<String>>? translations,
     bool? diarized,
     Map<String, dynamic>? summary,
   }) => Recording(
@@ -105,6 +110,7 @@ class Recording {
         transcript: transcript ?? this.transcript,
         segments: segments ?? this.segments,
         speakers: speakers ?? this.speakers,
+        translations: translations ?? this.translations,
         diarized: diarized ?? this.diarized,
         summary: summary ?? this.summary,
       );
@@ -144,5 +150,13 @@ class Recording {
   static Map<String, String> _decodeStrMap(dynamic raw) {
     final m = _decodeMap(raw);
     return m.map((k, v) => MapEntry(k, v.toString()));
+  }
+
+  static Map<String, List<String>> _decodeStrListMap(dynamic raw) {
+    final m = _decodeMap(raw);
+    return m.map((k, v) => MapEntry(
+          k,
+          v is List ? v.map((e) => e.toString()).toList() : <String>[],
+        ));
   }
 }

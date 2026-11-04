@@ -124,8 +124,9 @@ def summarize_transcript(transcript: str, language: str | None = None) -> dict:
 
 
 _ACTION_RE = re.compile(
-    r"\b(can|se|phai|giao|lam|thuc hien|trien khai|hen|dang ky|nhan lam|phan cong|"
-    r"co trach nhiem|chiu trach nhiem|bao cao|gui|hoan thanh|kiem tra|chuan bi)\b",
+    r"\b(can|can phai|se|phai|phu trach|chiu trach nhiem|co trach nhiem|"
+    r"hoan thanh|thuc hien|trien khai|phan cong|giao cho|hen|dang ky|"
+    r"kiem tra lai|chuan bi bao cao)\b",
     re.IGNORECASE,
 )
 _DECISION_RE = re.compile(
@@ -170,23 +171,116 @@ def summarize_with_rules(transcript: str) -> dict:
     decisions = []
     open_questions = []
     for raw, norm in zip(sentences, norm_sentences):
-        if _QUESTION_RE.search(norm):
+        is_question = bool(_QUESTION_RE.search(norm))
+        is_decision = bool(_DECISION_RE.search(norm))
+        if is_question:
             open_questions.append(raw)
-        if _DECISION_RE.search(norm):
+        if is_decision:
             decisions.append(raw)
-        if _ACTION_RE.search(norm):
-            action_items.append({"task": raw, "owner": None, "due": None})
-    summary = " ".join(sentences[:3])
-    if len(sentences) > 3:
-        summary += " ..."
+        if _ACTION_RE.search(norm) and not is_question and not is_decision:
+            action_items.append({
+                "task": raw,
+                "owner": _extract_owner(raw),
+                "due": _extract_due(raw),
+            })
     return {
-        "summary": summary,
+        "summary": _extractive_summary(sentences),
         "topics": _extract_topics(transcript),
-        "decisions": decisions[:20],
+        "decisions": _dedupe(decisions)[:20],
         "action_items": action_items[:30],
-        "open_questions": open_questions[:20],
+        "open_questions": _dedupe(open_questions)[:20],
         "method": "rule",
     }
+
+
+def _dedupe(items: list) -> list:
+    seen, out = set(), []
+    for x in items:
+        key = _remove_diacritics(str(x)).lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(x)
+    return out
+
+
+def _content_words(norm_text: str) -> list:
+    return [w for w in _tokenize(norm_text) if w not in _STOPWORDS and len(w) > 1]
+
+
+def _extractive_summary(
+    sentences: list[str],
+    max_sentences: int = 4,
+    max_chars: int = 420,
+) -> str:
+    """Tom tat trich xuat: chon cau 'trung tam' nhat thay vi lay 3 cau dau."""
+    if len(sentences) <= 2:
+        return " ".join(sentences)
+
+    norms = [_remove_diacritics(s) for s in sentences]
+    df: dict = {}
+    for n in norms:
+        for w in set(_content_words(n)):
+            df[w] = df.get(w, 0) + 1
+    total = len(sentences)
+
+    scores = []
+    for i, n in enumerate(norms):
+        words = _content_words(n)
+        if not words:
+            scores.append(0.0)
+            continue
+        score = sum((df.get(w, 0) / total) ** 1.5 for w in words)
+        score /= len(words) ** 0.5
+        if i == 0:
+            score *= 1.15
+        elif i == total - 1:
+            score *= 1.05
+        if len(words) < 4:
+            score *= 0.6
+        scores.append(score)
+
+    ranked = sorted(range(total), key=lambda i: -scores[i])
+    chosen = sorted(ranked[:max_sentences])
+    out: list[str] = []
+    used = 0
+    for i in chosen:
+        s = sentences[i]
+        if out and used + len(s) > max_chars:
+            break
+        out.append(s)
+        used += len(s) + 1
+    return " ".join(out) if out else sentences[0]
+
+
+_OWNER_RE = re.compile(
+    r"giao\s+(?:cho|việc cho)\s+([A-ZĐÀÁẢÃẠĂÂÊÔƠƯ][\wÀ-ỹ]{1,20})",
+    re.UNICODE,
+)
+_DUE_RE = re.compile(
+    r"(?:trước|hạn|chậm nhất|deadline)\s+(?:ngày\s*)?"
+    r"(\d{1,2}(?:/\d{1,2})?|thứ\s*\d|tuần sau|tháng sau|cuối tuần)",
+    re.IGNORECASE,
+)
+
+
+_OWNER2_RE = re.compile(
+    r"^(?:(?:Anh|Chị|Ông|Bà|Bạn|Em|Đồng chí)\s+)?"
+    r"([A-ZĐÀÁẢÃẠĂÂÊÔƠƯ][\wÀ-ỹ]{1,15})\s+(?:sẽ|phải|cần)",
+    re.UNICODE,
+)
+
+
+def _extract_owner(sentence: str) -> str | None:
+    m = _OWNER_RE.search(sentence)
+    if m:
+        return m.group(1)
+    m2 = _OWNER2_RE.search(sentence)
+    return m2.group(1) if m2 else None
+
+
+def _extract_due(sentence: str) -> str | None:
+    m = _DUE_RE.search(sentence)
+    return m.group(0).strip() if m else None
 
 
 _STOPWORDS = {
@@ -225,10 +319,18 @@ def _extract_topics(text: str, top_n: int = 6) -> list:
     scored = [(p, c * (len(p.split()) ** 1.6)) for p, c in counts.items()]
     scored.sort(key=lambda kv: (-kv[1], -len(kv[0])))
     out: list = []
+    out_tokens: list = []
     for phrase, _ in scored:
+        toks = set(_remove_diacritics(phrase).split())
         if any(phrase in o or o in phrase for o in out):
             continue
+        # Bo cum chi trung 2 tu tro len voi cum da chon (tranh "sach marketing them").
+        if len(toks) >= 2 and any(
+            len(t) >= 2 and len(toks & t) >= 1 for t in out_tokens
+        ):
+            continue
         out.append(phrase)
+        out_tokens.append(toks)
         if len(out) >= top_n:
             break
     return out

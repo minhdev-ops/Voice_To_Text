@@ -15,7 +15,7 @@ class RecordingRepository {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'vietvoice.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createTable(db);
       },
@@ -23,6 +23,9 @@ class RecordingRepository {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE recordings ADD COLUMN speakers_json TEXT');
           await db.execute('ALTER TABLE recordings ADD COLUMN diarized INTEGER');
+        }
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE recordings ADD COLUMN translations_json TEXT');
         }
       },
     );
@@ -91,6 +94,7 @@ class RecordingRepository {
     String? transcript,
     List<dynamic>? segments,
     Map<String, String>? speakers,
+    Map<String, List<String>>? translations,
     bool? diarized,
   }) async {
     final db = await _database();
@@ -98,6 +102,9 @@ class RecordingRepository {
     if (transcript != null) values['transcript'] = transcript;
     if (segments != null) values['segments_json'] = jsonEncode(segments);
     if (speakers != null) values['speakers_json'] = jsonEncode(speakers);
+    if (translations != null) {
+      values['translations_json'] = jsonEncode(translations);
+    }
     if (diarized != null) values['diarized'] = diarized ? 1 : 0;
     if (values.isNotEmpty) {
       await db.update('recordings', values, where: 'id = ?', whereArgs: [id]);
@@ -117,6 +124,7 @@ class RecordingRepository {
         transcript TEXT NOT NULL,
         segments_json TEXT,
         speakers_json TEXT,
+        translations_json TEXT,
         diarized INTEGER,
         summary_json TEXT
       )
