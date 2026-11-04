@@ -71,7 +71,9 @@ USER_PROMPT_TEMPLATE = """Hay phan tich ban ghi cuoc hop sau va tra ve JSON voi 
   ],
   "open_questions": ["cau hoi/con bo ngo (hoac [])"],
   "mind_map": {"root": "ten cuoc hop", "branches": [{"label": "chu de 1", "children": ["y kien 1", "y kien 2"]}]},
-  "flashcards": [{"q": "cau hoi", "a": "dap an"}]
+  "flashcards": [{"q": "cau hoi", "a": "dap an"}],
+  "quiz": [{"q": "cau hoi trac nghiem", "options": ["A", "B", "C", "D"], "answer": 0}],
+  "slides": [{"title": "tieu de slide", "bullets": ["y kien 1", "y kien 2"]}]
 }
 
 Ban ghi cuoc hop:
@@ -162,6 +164,8 @@ def _empty_summary() -> dict:
         "open_questions": [],
         "mind_map": {},
         "flashcards": [],
+        "quiz": [],
+        "slides": [],
         "method": "rule",
     }
 
@@ -195,6 +199,8 @@ def summarize_with_rules(transcript: str) -> dict:
         "open_questions": _dedupe(open_questions)[:20],
         "mind_map": _build_mind_map(transcript),
         "flashcards": [],
+        "quiz": [],
+        "slides": _build_slides(transcript, sentences),
         "method": "rule",
     }
 
@@ -351,7 +357,17 @@ def _build_mind_map(transcript: str) -> dict:
     return {"root": "Cuoc hop", "branches": branches}
 
 
-def _normalize(data: dict) -> dict:
+def _build_slides(transcript: str, sentences: list) -> list:
+    """Tao slide don gian tu cac cau trung tam."""
+    if len(sentences) <= 2:
+        return [{"title": "Cuoc hop", "bullets": sentences[:3]}]
+    topics = _extract_topics(transcript, top_n=5)
+    slides = []
+    for t in topics:
+        related = [s for s in sentences if t.lower() in _remove_diacritics(s).lower()]
+        bullets = related[:3] if related else sentences[:2]
+        slides.append({"title": t, "bullets": bullets})
+    return slides[:8]
     action_items = []
     for it in data.get("action_items", []) or []:
         if isinstance(it, str):
@@ -370,6 +386,8 @@ def _normalize(data: dict) -> dict:
         "open_questions": [str(q) for q in (data.get("open_questions") or [])],
         "mind_map": data.get("mind_map") or {},
         "flashcards": data.get("flashcards") or [],
+        "quiz": data.get("quiz") or [],
+        "slides": data.get("slides") or [],
         "method": "llm",
     }
 
@@ -413,5 +431,23 @@ def render_markdown(summary: dict) -> str:
     else:
         lines.append("_(khong co)_")
     lines.append("")
+    if summary.get("quiz"):
+        lines.append("## Cau hoi trac nghiem")
+        for i, q in enumerate(summary["quiz"], 1):
+            opts = q.get("options", []) if isinstance(q, dict) else []
+            ans = q.get("answer", 0) if isinstance(q, dict) else 0
+            lines.append(f"{i}. {q.get('q', '') if isinstance(q, dict) else q}")
+            for j, opt in enumerate(opts):
+                mark = "x" if j == ans else " "
+                lines.append(f"   [{mark}] {opt}")
+        lines.append("")
+    if summary.get("slides"):
+        lines.append("## Slides trinh bay")
+        for i, s in enumerate(summary["slides"], 1):
+            title = s.get("title", "") if isinstance(s, dict) else str(s)
+            bullets = s.get("bullets", []) if isinstance(s, dict) else []
+            lines.append(f"### Slide {i}: {title}")
+            lines += [f"- {b}" for b in bullets]
+            lines.append("")
     lines.append(f"_Phuong phap: {summary.get('method', 'unknown')}_")
     return "\n".join(lines)

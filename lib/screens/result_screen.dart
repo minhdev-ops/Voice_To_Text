@@ -125,7 +125,7 @@ class _ResultScreenState extends State<ResultScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _rec = widget.recording;
     if (_rec == null) {
       _load();
@@ -387,6 +387,8 @@ class _ResultScreenState extends State<ResultScreen>
                   Tab(icon: Icon(Icons.summarize), text: 'Tóm tắt'),
                   Tab(icon: Icon(Icons.account_tree), text: 'Sơ đồ'),
                   Tab(icon: Icon(Icons.translate), text: 'Bản dịch'),
+                  Tab(icon: Icon(Icons.quiz), text: 'Quiz'),
+                  Tab(icon: Icon(Icons.slideshow), text: 'Slides'),
                 ],
               )
             : null,
@@ -411,6 +413,8 @@ class _ResultScreenState extends State<ResultScreen>
                               _summaryTab(rec),
                               _mindMapTab(rec),
                               _translateTab(rec),
+                              _quizTab(rec),
+                              _slidesTab(rec),
                             ],
                           ),
                         ),
@@ -1018,6 +1022,145 @@ class _ResultScreenState extends State<ResultScreen>
           ]),
         ],
       ],
+    );
+  }
+
+  Widget _quizTab(Recording rec) {
+    final theme = Theme.of(context);
+    final s = rec.summary;
+    final quiz = (s['quiz'] as List?) ?? [];
+
+    if (quiz.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.quiz, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Chưa có câu hỏi trắc nghiệm', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Quiz sẽ được tạo khi có tóm tắt từ LLM.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: quiz.length,
+      itemBuilder: (_, i) {
+        final item = quiz[i] as Map;
+        final q = (item['q'] ?? '').toString();
+        final options = (item['options'] as List?) ?? const [];
+        final answer = (item['answer'] as num?)?.toInt() ?? 0;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ExpansionTile(
+            leading: CircleAvatar(
+              backgroundColor: theme.colorScheme.tertiaryContainer,
+              child: Text('${i + 1}',
+                  style: TextStyle(color: theme.colorScheme.onTertiaryContainer)),
+            ),
+            title: Text(q, style: theme.textTheme.bodyMedium),
+            children: [
+              ...options.asMap().entries.map((e) {
+                final idx = e.key;
+                final opt = e.value.toString();
+                final isAnswer = idx == answer;
+                return ListTile(
+                  leading: Icon(
+                    isAnswer ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: isAnswer ? Colors.green : null,
+                    size: 20,
+                  ),
+                  title: Text(opt),
+                  dense: true,
+                  contentPadding: const EdgeInsets.only(left: 32, right: 16),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _slidesTab(Recording rec) {
+    final theme = Theme.of(context);
+    final s = rec.summary;
+    final slides = (s['slides'] as List?) ?? [];
+
+    if (slides.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.slideshow, size: 64, color: theme.colorScheme.outlineVariant),
+            const SizedBox(height: 16),
+            Text('Chưa có slide', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Slides sẽ được tạo khi có tóm tắt từ LLM.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: slides.length,
+      itemBuilder: (_, i) {
+        final slide = slides[i] as Map;
+        final title = (slide['title'] ?? '').toString();
+        final bullets = (slide['bullets'] as List?) ?? const [];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      child: Text('${i + 1}',
+                          style: TextStyle(color: theme.colorScheme.onPrimaryContainer)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(title,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          )),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...bullets.map((b) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6, left: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('•  '),
+                          Expanded(child: Text(b.toString())),
+                        ],
+                      ),
+                    )),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
