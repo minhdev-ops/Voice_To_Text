@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Bo nhan dien hinh anh cho NoteX: tim an tuong, the phang, chu ro rang.
 class AppTheme {
-  static const seed = Color(0xFF5B5BD6);
+  static const seed = Color(0xFF6750A4);
   static const _lightBg = Color(0xFFF7F7FB);
   static const _darkBg = Color(0xFF121218);
 

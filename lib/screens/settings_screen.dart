@@ -150,6 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _serverSection(theme),
           _asrSection(theme),
           _aiSection(theme),
+          _calendarSection(theme),
           _aboutSection(theme),
         ],
       ),
@@ -294,6 +295,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
+
+  Widget _calendarSection(ThemeData theme) => _section(
+        theme,
+        'Đồng bộ lịch',
+        Icons.calendar_month,
+        [
+          ListTile(
+            leading: const Icon(Icons.sync),
+            title: const Text('Google Calendar / Outlook'),
+            subtitle: const Text('Ghi chú tự động từ lịch họp'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Đồng bộ lịch đang được phát triển.'),
+                ),
+              );
+            },
+          ),
+        ],
+      );
 
   Widget _aboutSection(ThemeData theme) => _section(
         theme,

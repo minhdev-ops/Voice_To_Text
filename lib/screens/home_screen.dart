@@ -88,6 +88,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: const Text('NoteX'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.videocam_outlined),
+            onPressed: () => _showMeetingBotDialog(context),
+            tooltip: 'Tham gia cuộc họp',
+          ),
+          IconButton(
             icon: const Icon(Icons.upload_file),
             onPressed: widget.onPickFile,
             tooltip: 'Nhập tệp âm thanh',
@@ -346,6 +351,62 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     if (r.model != null) parts.add(r.model!);
     return parts.join(' · ');
+  }
+
+  void _showMeetingBotDialog(BuildContext context) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.videocam_outlined),
+            SizedBox(width: 8),
+            Text('Tham gia cuộc họp'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Dán liên kết Zoom, Google Meet, Microsoft Teams hoặc WebEx. '
+              'Trợ lý AI sẽ tham gia và ghi lại cuộc họp thay bạn.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Liên kết cuộc họp',
+                hintText: 'https://meet.google.com/...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final url = ctrl.text.trim();
+              Navigator.pop(ctx);
+              if (url.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Tính năng bot họp đang được phát triển. '
+                        'Hãy ghi âm trực tiếp hoặc nhập tệp âm thanh.'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Tham gia'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showActions(BuildContext context, Recording r) {
