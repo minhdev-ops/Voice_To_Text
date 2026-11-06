@@ -43,6 +43,19 @@ SUMMARY_BASE_URL=https://api.openai.com/v1
 SUMMARY_MODEL=gpt-4o-mini
 DEFAULT_LANGUAGE=vi
 WHISPER_MODEL=large-v3
+# Bảo mật (production)
+# API_TOKEN=<chuoi ngau nhien>        # bat xac thuc Bearer tren cac endpoint
+# CORS_ORIGINS=https://app.example    # khong dung "*" khi da co auth
+# ALLOW_EXTERNAL_TRANSLATE=1          # cho phep fallback Google dich (mac dinh tat)
+```
+
+## Kiểm thử backend
+
+```bash
+cd backend
+pip install pytest httpx
+pytest tests -q                     # test unit (nhanh, stub Whisper)
+REAL_MODEL=1 pytest tests -q        # them test voi Whisper that (can model)
 ```
 
 ## API backend (xử lý bất đồng bộ như NoteX)
@@ -60,6 +73,16 @@ GET  /api/tasks/{task_id}
 Task chạy nền, một worker (Whisper không chạy song song), kết quả giữ tối đa
 50 task đã xong. Audio tải lên tối đa 1 GB, định dạng
 wav/mp3/m4a/ogg/flac/webm/aac/mp4/opus.
+
+## Triển khai production
+
+- Chạy đúng 1 process uvicorn (`uvicorn api_server:app`): task queue nằm trong RAM,
+  dùng nhiều worker sẽ mất task.
+- Phía trước dùng nginx/Caddy để có HTTPS và giới hạn tốc độ (`limit_req`).
+- Đặt `API_TOKEN`, chia sẻ cho app; không mở port ra Internet mà không có TLS + token.
+- Mặc định dịch thuật khi chưa có LLM sẽ từ chối thay vì gửi transcript ra Google
+  (quyền riêng tư). Bật bằng `ALLOW_EXTERNAL_TRANSLATE=1` nếu chấp nhận.
+- `WHISPER_MODEL` GPU/CPU tự chọn; mô hình tải về `~/.cache/huggingface`.
 
 ## Chạy Flutter App
 

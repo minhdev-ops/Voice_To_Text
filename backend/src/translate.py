@@ -6,6 +6,7 @@ import re
 
 import requests
 
+from . import config as _cfg
 from .summarize import _api_key, _base_url, _model, llm_configured
 
 LANGUAGES = {
@@ -162,10 +163,19 @@ def translate_auto(
     target: str,
     source: str | None = None,
 ) -> dict:
-    """Uu tien LLM (chat luong cao), neu chua cau hinh thi dung Google dich."""
+    """Uu tien LLM (chat luong cao). Chua cau hinh thi khong dich thay vi gui transcript ra Google."""
     if llm_configured():
         try:
             return translate_texts(texts, target, source)
         except TranslateError:
             pass
+    if _cfg.get("ALLOW_EXTERNAL_TRANSLATE") != "1":
+        return {
+            "translations": [],
+            "target": target,
+            "method": "none",
+            "error": "Chưa cấu hình AI tóm tắt. Gửi transcript ra Google dịch "
+                     "bị tắt mặc định (quyền riêng tư); đặt ALLOW_EXTERNAL_TRANSLATE=1 "
+                     "để bật hoặc cấu hình API key trong Cài đặt.",
+        }
     return translate_texts_fallback(texts, target, source)

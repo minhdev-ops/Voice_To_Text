@@ -50,7 +50,7 @@ def llm_status() -> dict:
         "configured": bool(key and _base_url() and _model()),
         "base_url": _base_url(),
         "model": _model(),
-        "key_hint": (key[:4] + "..." + key[-4:]) if len(key) > 12 else ("" if not key else "***"),
+        "key_hint": (("***" + key[-4:]) if len(key) >= 8 else ("***" if key else "")),
         "source": "runtime" if _RUNTIME.get("api_key") else "env",
     }
 
