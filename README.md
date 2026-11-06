@@ -26,12 +26,16 @@ ghi nhớ, quiz và slide thuyết trình.
 
 ## Cài đặt Backend
 
+Toàn bộ mã backend nằm trong thư mục `backend/`:
+
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
+cd backend
 python api_server.py            # mở cổng 0.0.0.0:8000
+# hoặc: uvicorn api_server:app --host 0.0.0.0 --port 8000
 ```
 
-Cấu hình LLM (tùy chọn) trong `.env`:
+Cấu hình LLM (tùy chọn) trong `backend/.env` (sao chép từ `backend/.env.example`):
 
 ```
 SUMMARY_API_KEY=sk-...
@@ -40,6 +44,22 @@ SUMMARY_MODEL=gpt-4o-mini
 DEFAULT_LANGUAGE=vi
 WHISPER_MODEL=large-v3
 ```
+
+## API backend (xử lý bất đồng bộ như NoteX)
+
+Frontend không chờ backend xử lý xong trong một request. Luồng:
+
+```text
+POST /api/tasks   (multipart: file, language, model, diarize, num_speakers)
+      -> 202 {"task_id": "...", "status": "PENDING"}
+GET  /api/tasks/{task_id}
+      -> PENDING | PROCESSING | SUCCESS | FAILURE
+         kèm step, progress (0-100), data (transcript + summary) hoặc error
+```
+
+Task chạy nền, một worker (Whisper không chạy song song), kết quả giữ tối đa
+50 task đã xong. Audio tải lên tối đa 1 GB, định dạng
+wav/mp3/m4a/ogg/flac/webm/aac/mp4/opus.
 
 ## Chạy Flutter App
 
@@ -67,9 +87,11 @@ lib/
     search_screen.dart      # Tìm kiếm
     settings_screen.dart    # Cài đặt server/ASR/AI/Lịch
   data/                  # SQLite local storage
-src/
-  transcribe.py          # STT faster-whisper
-  summarize.py           # Tóm tắt LLM + quy tắc (mind_map, flashcards, quiz, slides)
-  translate.py           # Dịch thuật đa ngôn ngữ
-  diarize.py             # Phân biệt người nói
+backend/
+  api_server.py          # FastAPI: toàn bộ xử lý AI (STT, tóm tắt, dịch, diarize)
+  src/
+    transcribe.py        # STT faster-whisper
+    summarize.py         # Tóm tắt LLM + quy tắc (mind_map, flashcards, quiz, slides)
+    translate.py         # Dịch thuật đa ngôn ngữ
+    diarize.py           # Phân biệt người nói
 ```

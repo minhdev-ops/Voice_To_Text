@@ -1,7 +1,7 @@
-"""API server cho Voice_To_Text.
+"""API server cho NoteX.
 
-Nhan file audio (hoac text) -> chep loi (Whisper local) + tom tat -> tra ve JSON.
-Frontend Flutter (app auvira) goi cac endpoint nay.
+Nhan file audio -> xep hang xu ly nen (Whisper local + tom tat) -> tra task_id.
+Frontend Flutter goi cac endpoint nay va poll trang thai task.
 
 Chay:
   uvicorn api_server:app --host 0.0.0.0 --port 8000
@@ -10,21 +10,29 @@ Hoac:
 """
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src import models_registry
 from src.config import DEFAULT_LANGUAGE, WHISPER_MODEL
-from src.core import process_audio, process_text
+from src.core import process_text
 from src.summarize import configure_llm, llm_status, summarize_transcript
+from src.tasks import TaskStore
 from src.transcribe import list_models
 
 app = FastAPI(title="NoteX API", version="1.0.0")
+
+ALLOWED_AUDIO_SUFFIXES = {
+    ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm", ".aac", ".mp4", ".opus",
+}
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024  # 1 GB
+tasks = TaskStore()
 
 # Cho phep Flutter (web/android) goi tu may khac trong luc phat trien.
 app.add_middleware(
@@ -192,30 +200,50 @@ def summarize(req: SummarizeRequest):
     return result["summary"]
 
 
-@app.post("/api/transcribe")
-def transcribe(
+@app.post("/api/tasks", status_code=202)
+def create_task(
     file: UploadFile = File(...),
     language: str | None = Form(None),
     model: str | None = Form(None),
     diarize: bool = Form(False),
     num_speakers: int | None = Form(None),
 ):
-    suffix = Path(file.filename).suffix or ".wav"
-    with tempfile.TemporaryDirectory() as td:
-        path = Path(td) / f"input{suffix}"
-        path.write_bytes(file.file.read())
-        result = process_audio(
+    """Nhan file audio, xep hang xu ly nen. Giong NoteX: tra task_id de poll."""
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_AUDIO_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dinh dang audio khong ho tro: {suffix or '(khong ro)'}",
+        )
+
+    upload_dir = Path(tempfile.mkdtemp(prefix="vtt-upload-"))
+    path = upload_dir / f"input{suffix}"
+    size = 0
+    try:
+        with path.open("wb") as out:
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="File qua lon (toi da 1 GB)")
+                out.write(chunk)
+        task = tasks.submit(
             path,
-            out_dir=None,
-            language=language or None,
+            language=language,
             model_size=model,
             diarize=diarize,
             num_speakers=num_speakers,
         )
-    return {
-        "transcript": result["transcript"],
-        "summary": result["summary"],
-    }
+    except Exception:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise
+    return {"task_id": task["task_id"], "status": task["status"]}
+
+@app.get("/api/tasks/{task_id}")
+def task_status(task_id: str):
+    task = tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Khong tim thay task")
+    return task
 
 
 if __name__ == "__main__":

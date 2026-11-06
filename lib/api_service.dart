@@ -14,9 +14,12 @@ class ApiService {
     String filename, {
     String? language,
     String? model,
+    void Function(Map<String, dynamic> task)? onProgress,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/transcribe');
-    final request = http.MultipartRequest('POST', uri);
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/tasks'),
+    );
     final ext = filename.split('.').last.toLowerCase();
     final mime = _mimeFor(ext);
     request.files.add(
@@ -29,16 +32,7 @@ class ApiService {
     );
     if (language != null) request.fields['language'] = language;
     if (model != null) request.fields['model'] = model;
-
-    final streamed = await request.send().timeout(
-      const Duration(seconds: 120),
-      onTimeout: () => throw TimeoutException('Het thoi gian cho backend'),
-    );
-    final resp = await http.Response.fromStream(streamed);
-    if (resp.statusCode != 200) {
-      throw Exception('Loi ${resp.statusCode}: ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+    return _awaitTask(await _submit(request), onProgress: onProgress);
   }
 
   Future<List<String>> listModels() async {
@@ -157,9 +151,12 @@ class ApiService {
     String? model,
     bool diarize = false,
     int? numSpeakers,
+    void Function(Map<String, dynamic> task)? onProgress,
   }) async {
-    final uri = Uri.parse('$baseUrl/api/transcribe');
-    final request = http.MultipartRequest('POST', uri);
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/tasks'),
+    );
     final mime = _mimeFor(filename.split('.').last.toLowerCase());
     request.files.add(
       await http.MultipartFile.fromPath(
@@ -173,15 +170,7 @@ class ApiService {
     if (model != null) request.fields['model'] = model;
     request.fields['diarize'] = diarize ? 'true' : 'false';
     if (numSpeakers != null) request.fields['num_speakers'] = '$numSpeakers';
-    final streamed = await request.send().timeout(
-      const Duration(seconds: 180),
-      onTimeout: () => throw TimeoutException('Het thoi gian cho backend'),
-    );
-    final resp = await http.Response.fromStream(streamed);
-    if (resp.statusCode != 200) {
-      throw Exception('Loi ${resp.statusCode}: ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+    return _awaitTask(await _submit(request), onProgress: onProgress);
   }
 
   /// Phan biet nguoi noi cho transcript da co (UI-07).
@@ -306,6 +295,51 @@ class ApiService {
       {'code': 'ja', 'name': '日本語'},
       {'code': 'ko', 'name': '한국어'},
     ];
+  }
+
+  /// Gui file audio, nhan task_id. Backend xu ly nen (giong NoteX).
+  Future<String> _submit(http.MultipartRequest request) async {
+    final streamed = await request.send().timeout(
+      const Duration(minutes: 10),
+      onTimeout: () => throw TimeoutException('Het thoi gian tai file len backend'),
+    );
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode != 200 && resp.statusCode != 202) {
+      throw Exception('Loi ${resp.statusCode}: ${resp.body}');
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final id = data['task_id'];
+    if (id is! String) {
+      throw Exception('Backend khong tra task_id: ${resp.body}');
+    }
+    return id;
+  }
+
+  /// Poll task: PENDING -> PROCESSING -> SUCCESS/FAILURE.
+  Future<Map<String, dynamic>> _awaitTask(
+    String taskId, {
+    void Function(Map<String, dynamic> task)? onProgress,
+  }) async {
+    while (true) {
+      await Future.delayed(const Duration(seconds: 2));
+      final resp = await http
+          .get(Uri.parse('$baseUrl/api/tasks/$taskId'))
+          .timeout(const Duration(seconds: 30));
+      if (resp.statusCode != 200) {
+        throw Exception('Loi ${resp.statusCode}: ${resp.body}');
+      }
+      final task = jsonDecode(resp.body) as Map<String, dynamic>;
+      onProgress?.call(task);
+      final status = task['status'];
+      if (status == 'SUCCESS') {
+        final data = task['data'];
+        if (data is Map) return Map<String, dynamic>.from(data);
+        throw Exception('Task khong co ket qua');
+      }
+      if (status == 'FAILURE' || status == 'FAIL') {
+        throw Exception((task['error'] ?? 'Xu ly that bai').toString());
+      }
+    }
   }
 
   static (String, String) _mimeFor(String ext) {

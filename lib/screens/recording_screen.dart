@@ -37,6 +37,8 @@ class _RecordingScreenState extends State<RecordingScreen> {
   bool _recording = false;
   bool _paused = false;
   bool _processing = false;
+  int _progress = 0;
+  String? _stage;
   Duration _elapsed = Duration.zero;
   Timer? _timer;
   String? _error;
@@ -207,6 +209,18 @@ class _RecordingScreenState extends State<RecordingScreen> {
         p.basename(audioPath),
         language: widget.language,
         model: widget.model,
+        onProgress: (task) {
+          if (!mounted) return;
+          final step = (task['step'] ?? '').toString();
+          setState(() {
+            _progress = (task['progress'] as num?)?.toInt() ?? 0;
+            _stage = switch (step) {
+              'queued' => 'Đang chờ xử lý...',
+              'summarizing' => 'Đang tóm tắt cuộc họp...',
+              _ => 'Đang nhận dạng giọng nói...',
+            };
+          });
+        },
       );
       final text = ((result['transcript'] as Map?)?['text'] ?? '')
           .toString()
@@ -465,19 +479,26 @@ class _RecordingScreenState extends State<RecordingScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(
+            SizedBox(
               width: 64,
               height: 64,
-              child: CircularProgressIndicator(strokeWidth: 4),
+              child: CircularProgressIndicator(
+                strokeWidth: 4,
+                value: _progress > 0 ? _progress / 100 : null,
+              ),
             ),
             const SizedBox(height: 24),
-            Text('Đang nhận dạng giọng nói...',
+            Text(_stage ?? 'Đang nhận dạng giọng nói...',
                 style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text('Mô hình: ${widget.model}',
-                style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
+            Text(
+              _progress > 0
+                  ? '$_progress% · mô hình ${widget.model}'
+                  : 'Mô hình: ${widget.model}',
+              style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
+            ),
             const SizedBox(height: 8),
-            const Text('Vui lòng đợi, quá trình này có thể mất vài giây.',
+            const Text('Vui lòng đợi, quá trình này có thể mất vài phút.',
                 style: TextStyle(color: Colors.grey)),
           ],
         ),

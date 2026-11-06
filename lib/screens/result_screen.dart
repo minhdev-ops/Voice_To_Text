@@ -107,6 +107,8 @@ class _ResultScreenState extends State<ResultScreen>
   Recording? _rec;
   String? _error;
   bool _loading = false;
+  String? _stage;
+  int _progress = 0;
 
   AudioPlayer? _player;
   bool _playing = false;
@@ -138,6 +140,20 @@ class _ResultScreenState extends State<ResultScreen>
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    void onTask(Map<String, dynamic> task) {
+      if (!mounted) return;
+      final step = (task['step'] ?? '').toString();
+      setState(() {
+        _progress = (task['progress'] as num?)?.toInt() ?? 0;
+        _stage = switch (step) {
+          'queued' => 'Đang chờ xử lý...',
+          'summarizing' => 'Đang tóm tắt cuộc họp...',
+          'done' => 'Hoàn tất',
+          _ => 'Đang nhận dạng giọng nói...',
+        };
+      });
+    }
+
     try {
       final result = widget.path != null
           ? await widget.api!.transcribeFile(
@@ -147,12 +163,14 @@ class _ResultScreenState extends State<ResultScreen>
               model: widget.model,
               diarize: widget.diarize,
               numSpeakers: widget.numSpeakers,
+              onProgress: onTask,
             )
           : await widget.api!.transcribeAudio(
               widget.bytes!,
               widget.filename!,
               language: widget.language,
               model: widget.model,
+              onProgress: onTask,
             );
       result['_audio_path'] = widget.audioPath;
       final saved = await widget.onCompleted?.call(result);
@@ -560,20 +578,25 @@ class _ResultScreenState extends State<ResultScreen>
     await widget.onSummaryUpdated?.call(updated, s);
   }
 
-  Widget _loadingView() => const Center(
+  Widget _loadingView() => Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
               width: 64,
               height: 64,
-              child: CircularProgressIndicator(strokeWidth: 4),
+              child: CircularProgressIndicator(
+                strokeWidth: 4,
+                value: _progress > 0 ? _progress / 100 : null,
+              ),
             ),
-            SizedBox(height: 24),
-            Text('Đang nhận dạng giọng nói...'),
-            SizedBox(height: 8),
-            Text('Vui lòng đợi trong giây lát.',
-                style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 24),
+            Text(_stage ?? 'Đang nhận dạng giọng nói...'),
+            const SizedBox(height: 8),
+            Text(
+              _progress > 0 ? '$_progress%' : 'Vui lòng đợi trong giây lát.',
+              style: const TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       );
