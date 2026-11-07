@@ -75,7 +75,7 @@ def transcribe_file(
     model = _load_model(size, device)
     dev = _pick_device(device)
 
-    prompt = "Đây là bản ghi âm cuộc họp bằng tiếng Việt."
+
 
     def _run(vad: bool):
         it, inf = model.transcribe(
@@ -86,7 +86,6 @@ def transcribe_file(
             vad_filter=vad,
             vad_parameters=dict(min_silence_duration_ms=500) if vad else None,
             condition_on_previous_text=False,
-            initial_prompt=prompt,
         )
         segs: list = []
         parts: list = []
